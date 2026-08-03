@@ -31,6 +31,14 @@ daily_all = sh.load("shocks_daily", columns=[
     "item_id", "store_id", "d", "date", "score", "band",
     "dept_id", "cat_id", "state_id", "y_true", "y_pred"])
 
+if daily_all.empty:
+    st.info(
+        "No series was eligible for shock scoring in this dataset - every series had "
+        "too few non-zero sale days or too little out-of-sample residual history to "
+        "score responsibly. Nothing is scored on noise.",
+        icon=":material/info:")
+    st.stop()
+
 window_lo = day_map.get(int(daily_all["d"].min()))
 window_hi = day_map.get(int(daily_all["d"].max()))
 st.info(
@@ -38,7 +46,7 @@ st.info(
     f"out of sample: **{window_lo.date()} to {window_hi.date()}**. Scores measure "
     f"deviation from model expectation on days that already happened - they are not "
     f"a forecast of future risk. Residuals come from feature set "
-    f"**{metadata.get('shock_config', 'B')}**, which deliberately contains no FEMA or "
+    f"**{metadata['shock_config']}**, which deliberately contains no FEMA or "
     f"FRED features: if crisis signals were in the model they would be absorbed into "
     f"the prediction and disappear from the residual.",
     icon=":material/history:")
@@ -72,9 +80,11 @@ if episodes.empty:
 daily = sh.apply_filters(daily_all, ctx)
 
 # ------------------------------------------------------------------ KPIs
+seed_score = float(cfg["shock"]["episode"]["seed_score"])
 critical = int((episodes["band"] == "Critical").sum())
 severe = int((episodes["band"] == "Severe").sum())
-shock_day_share = float((daily["score"] >= 30).mean()) if not daily.empty else float("nan")
+shock_day_share = (float((daily["score"] >= seed_score).mean())
+                   if not daily.empty else float("nan"))
 overlap_rate = float(episodes["fema_overlap"].mean())
 top_dept = (episodes["dept_id"].value_counts().idxmax()
             if episodes["dept_id"].notna().any() else "-")
@@ -83,7 +93,9 @@ with st.container(horizontal=True):
     st.metric("Episodes", f"{len(episodes):,}", border=True)
     st.metric("Severe / critical", f"{severe:,} / {critical:,}", border=True)
     st.metric("Series-days in shock", sh.fmt_pct(shock_day_share), border=True,
-              help="Share of scored item-days scoring 30 or above (Watch and worse).")
+              help=f"Share of all scored item-days scoring {seed_score:.0f} or above "
+                   f"(Watch and worse). Reflects the sidebar filters but not the "
+                   f"severity/classification controls above.")
 with st.container(horizontal=True):
     st.metric("Highest score", f"{episodes['peak_score'].max():.0f}", border=True)
     st.metric("Median duration", f"{episodes['n_days'].median():.0f} days", border=True)
@@ -258,11 +270,15 @@ with detail_right:
         if fema.get("n_events", 0) > 0:
             st.markdown(f":orange-badge[FEMA declaration active]")
             st.write(S.format_fema_sentence(fema))
-            st.dataframe(
-                pd.DataFrame(fema["events"])[
-                    ["incidentType", "declarationType", "incident_begin",
-                     "incident_end", "counties_designated", "overlap_days"]],
-                hide_index=True, width="stretch")
+            events = pd.DataFrame(fema["events"])
+            columns = ["incidentType", "declarationType", "incident_begin",
+                       "incident_end", "counties_designated", "overlap_days"]
+            for flag, label in (("end_clipped", "Ongoing at window end"),
+                                ("end_estimated", "End date estimated")):
+                if flag in events.columns and events[flag].any():
+                    events[label] = events[flag]
+                    columns.append(label)
+            st.dataframe(events[columns], hide_index=True, width="stretch")
         else:
             st.write(S.format_fema_sentence(fema))
 

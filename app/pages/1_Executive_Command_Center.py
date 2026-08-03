@@ -27,7 +27,8 @@ st.caption(
 metrics = sh.load("metrics")
 overall = metrics[(metrics["fold_id"] == "HOLDOUT") & (metrics["level"] == "overall")
                   & (metrics["horizon"] == 28)]
-lgbm = overall[(overall["model"] == "lgbm") & (overall["config"] == selected_config)]
+# Kept only as a fallback for the benchmark KPI when the snaive28 forecast
+# partition is unavailable; the headline KPIs are computed from filtered rows.
 snaive = overall[overall["model"] == "snaive28"]
 
 # ---------------------------------------------------------------- forecasts
@@ -49,9 +50,38 @@ if forecasts.empty:
 
 total_actual = float(forecasts["y_true"].sum())
 total_forecast = float(forecasts["y_pred"].sum())
-wape = float(lgbm["wape"].iloc[0]) if not lgbm.empty else float("nan")
-bias = float(lgbm["bias"].iloc[0]) if not lgbm.empty else float("nan")
-snaive_wape = float(snaive["wape"].iloc[0]) if not snaive.empty else float("nan")
+
+
+def _pooled(frame: pd.DataFrame) -> tuple[float, float]:
+    """Pooled WAPE and bias over whatever rows are passed in.
+
+    Computed from the FILTERED forecast rows rather than the global metrics
+    artifact, so every KPI on this page describes the same selection. With no
+    filters applied these reproduce the stored overall metrics exactly.
+    """
+    actual = float(frame["y_true"].sum())
+    if actual <= 0:
+        return float("nan"), float("nan")
+    error = frame["y_pred"] - frame["y_true"]
+    return float(error.abs().sum() / actual), float(error.sum() / actual)
+
+
+wape, bias = _pooled(forecasts)
+
+# Benchmark on the same selection. Fall back to the global row only if the
+# partition is missing, and say so in the tooltip when that happens.
+snaive_scope = "current selection"
+try:
+    bench = sh.load_forecasts(model="snaive28", config="na", fold="HOLDOUT")
+    bench = bench.merge(meta[["item_id", "store_id", "dept_id", "cat_id", "state_id"]],
+                        on=["item_id", "store_id"], how="left")
+    bench = sh.apply_filters(bench, ctx)
+    snaive_wape = _pooled(bench)[0] if not bench.empty else float("nan")
+except FileNotFoundError:
+    snaive_wape = float("nan")
+if pd.isna(snaive_wape):
+    snaive_wape = float(snaive["wape"].iloc[0]) if not snaive.empty else float("nan")
+    snaive_scope = "all series"
 
 episodes = sh.load("shock_episodes") if sh.artifact_exists("shock_episodes") else pd.DataFrame()
 if not episodes.empty:
@@ -68,20 +98,25 @@ accuracy = 100 - 100 * wape if pd.notna(wape) else float("nan")
 accuracy = max(0.0, accuracy) if pd.notna(accuracy) else accuracy
 improvement = ((snaive_wape - wape) / snaive_wape) if pd.notna(snaive_wape) and snaive_wape else float("nan")
 
+severe_threshold = int(ctx["cfg"]["shock"]["bands"]["Severe"][0])
+
 with st.container(horizontal=True):
     st.metric("Actual units (28d)", sh.fmt_units(total_actual),
               delta=f"{total_forecast - total_actual:+,.0f} vs forecast", border=True)
-    st.metric("Forecast accuracy", f"{accuracy:.1f}%" if pd.notna(accuracy) else "-",
-              border=True,
-              help=f"100 - WAPE, clamped at zero. Raw WAPE is {wape:.3f}. "
+    st.metric("Item-day accuracy (100-WAPE)",
+              f"{accuracy:.1f}%" if pd.notna(accuracy) else "-", border=True,
+              help=f"100 - WAPE, clamped at zero, measured per item per store per "
+                   f"day on the current selection. Raw WAPE is {wape:.3f}. "
                    "WAPE can exceed 100% on intermittent demand.")
     st.metric("Forecast bias",
               f"{bias * 100:+.1f}%" if pd.notna(bias) else "-", border=True,
               help="Positive means the model over-forecast overall; negative means "
-                   "it under-forecast. Computed on the held-out 28 days.")
+                   "it under-forecast. Computed on the held-out 28 days for the "
+                   "current selection.")
 with st.container(horizontal=True):
     st.metric("Severe + critical shocks", f"{severe:,}", border=True,
-              help="Demand-shock episodes in the evaluated window scoring 70 or above.")
+              help=f"Demand-shock episodes in the evaluated window scoring "
+                   f"{severe_threshold} or above.")
     st.metric("Estimated revenue exposure", sh.fmt_money(exposure), border=True,
               help="Forecast error valued at real M5 sell prices over the 28-day "
                    "window. This is exposure, not measured lost revenue - M5 records "
@@ -89,19 +124,22 @@ with st.container(horizontal=True):
     st.metric("Gain vs seasonal naive",
               sh.fmt_pct(improvement) if pd.notna(improvement) else "-", border=True,
               help=f"Reduction in WAPE against a seasonal-naive (lag-28) benchmark "
-                   f"that uses the same information set. Benchmark WAPE {snaive_wape:.3f}.")
+                   f"that forecasts from the same 28-day-old information. Benchmark "
+                   f"WAPE {snaive_wape:.3f} ({snaive_scope}).")
 
 if pd.notna(bias) and pd.notna(accuracy):
     direction = "over-forecast" if bias > 0 else "under-forecast"
-    st.caption(
-        f"**Read these two together.** Forecast accuracy is measured per item, per "
-        f"store, per day, where demand is intermittent - most series sell a handful "
-        f"of units on some days and none on others, so matching individual days "
-        f"exactly is inherently hard and {accuracy:.0f}% is a normal level at that "
-        f"granularity. Across the whole selection the 28-day **total** came within "
-        f"{abs(bias) * 100:.1f}% of actual demand ({direction}). The number that "
-        f"matters for a build-or-buy case is the "
-        f"{improvement:.0%} reduction in error against the seasonal-naive benchmark.")
+    message = (
+        f"**Read these two together.** Accuracy here is measured per item, per store, "
+        f"per day, where demand is intermittent - most series sell a handful of units "
+        f"on some days and none on others, so matching individual days exactly is "
+        f"inherently hard at that granularity. Across the current selection the 28-day "
+        f"**total** came within {abs(bias) * 100:.1f}% of actual demand ({direction}).")
+    if pd.notna(improvement):
+        message += (f" The number that matters for a build-or-buy case is the "
+                    f"{improvement:.0%} reduction in error against the seasonal-naive "
+                    f"benchmark.")
+    st.caption(message)
 
 # ---------------------------------------------------------------- charts
 left, right = st.columns(2)
@@ -188,7 +226,9 @@ with right:
             fig.update_yaxes(title="WAPE", tickformat=".0%")
             st.plotly_chart(sh.style_fig(fig, 300), width="stretch")
             st.caption("Lower is better. Spikes mark days the model tracked demand "
-                       "least well across the whole selection.")
+                       "least well. This chart covers **all series across the full "
+                       "evaluated window** (backtest folds plus the holdout) and is "
+                       "not affected by the sidebar filters.")
 
 if not episodes.empty:
     with st.container(border=True):

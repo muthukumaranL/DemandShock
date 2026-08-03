@@ -183,13 +183,8 @@ def main() -> int:
         frame = F.load_features(cfg, d_max=fold.val_end_d)
         rows = []
         for objective in ("tweedie", "poisson", "regression"):
-            override = {"objective": objective}
-            if objective != "tweedie":
-                override["tweedie_variance_power"] = None
-                override.pop("tweedie_variance_power")
-                override = {"objective": objective}
             params = cfg.lgbm_params()
-            params.update(override)
+            params["objective"] = objective
             if objective != "tweedie":
                 params.pop("tweedie_variance_power", None)
             model = FC.train_lgbm(cfg, frame, fold, "B", params_override=params,

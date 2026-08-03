@@ -194,10 +194,24 @@ def main() -> int:
         fi = pd.read_parquet(cfg.artifacts_dir / "feature_importance.parquet")
         share = (fi.groupby("family")["gain"].sum() / fi["gain"].sum()).sort_values(
             ascending=False)
-        add(f"For perspective, FEMA features account for "
-            f"{share.get('fema', 0):.2%} of total model gain and FRED features "
-            f"{share.get('fred', 0):.2%}. Read the WAPE deltas above against those "
-            f"shares before concluding that external data improves point forecasts.\n")
+        # Attribution exists only for the SELECTED feature set. Quoting "0.00% of
+        # gain" for a family that is not in that set would read as a measurement
+        # when it is a structural certainty.
+        present = set(fi["family"])
+        measured = [f for f in ("fema", "fred") if f in present]
+        absent = [f for f in ("fema", "fred") if f not in present]
+        if measured:
+            add("For perspective, "
+                + " and ".join(f"{f.upper()} features account for "
+                               f"{share.get(f, 0):.2%} of total model gain"
+                               for f in measured)
+                + ". Read the WAPE deltas above against those shares before "
+                  "concluding that external data improves point forecasts.\n")
+        if absent:
+            add(f"{' and '.join(f.upper() for f in absent)} features are not part of "
+                f"the selected feature set, so they carry no attribution here by "
+                f"construction - the ablation table above is the evidence on whether "
+                f"they help.\n")
         add("**Share of model gain by feature family**\n")
         add("| Family | Share of gain |")
         add("| --- | --- |")

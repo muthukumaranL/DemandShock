@@ -13,7 +13,8 @@ import streamlit as st
 from demandshock import features as F  # noqa: E402
 
 sh.page_setup("Model, explainability & data quality", ":material/verified:")
-ctx = sh.sidebar_context()
+# Every figure on this page is model-wide by definition, so no hierarchy filters.
+ctx = sh.sidebar_context(filters=False)
 sh.header("MODEL, EXPLAINABILITY &amp; DATA QUALITY",
           "Can this model be trusted, why does it predict what it does, and is the "
           "underlying data sound?")
@@ -112,12 +113,22 @@ with tab_perf:
         importance_note = None
         if sh.artifact_exists("feature_importance"):
             fi = sh.load("feature_importance")
-            fema_share = float(fi[fi["family"] == "fema"]["gain"].sum()
-                               / max(fi["gain"].sum(), 1e-9))
-            importance_note = (
-                f"For perspective: FEMA features account for {fema_share:.2%} of total "
-                f"model gain. A small WAPE difference alongside a share this low is "
-                f"weak evidence that disaster context improves point forecasts.")
+            # Attribution comes from the SELECTED model only. If FEMA features are
+            # not in that feature set, a "0.00% of gain" figure would be a structural
+            # certainty masquerading as a measurement - say what is actually true.
+            if "fema" in set(fi["family"]):
+                fema_share = float(fi[fi["family"] == "fema"]["gain"].sum()
+                                   / max(fi["gain"].sum(), 1e-9))
+                importance_note = (
+                    f"For perspective: FEMA features account for {fema_share:.2%} of "
+                    f"total model gain. A small WAPE difference alongside a share this "
+                    f"low is weak evidence that disaster context improves point "
+                    f"forecasts.")
+            else:
+                importance_note = (
+                    "FEMA features are not part of the selected feature set, so they "
+                    "carry no attribution here by construction. The ablation table "
+                    "above is the evidence on whether they help.")
         if importance_note:
             st.caption(importance_note)
 
@@ -188,10 +199,11 @@ with tab_perf:
                 f"out-of-sample residuals grouped by store, category and forecast level.")
 
     st.caption(
-        "Disclosure: fold F1 was used for the objective spot-check and light "
-        "hyperparameter tuning before the parameters were frozen, and it also "
-        "contributes to the cross-fold means above. The holdout window was opened "
-        "once, after feature-set selection, and never used for tuning.")
+        "Disclosure: fold F1 was used for the objective spot-check (Tweedie vs "
+        "Poisson vs squared error, development mode only) before the objective was "
+        "frozen, and it also contributes to the cross-fold means above. No other "
+        "hyperparameter search was run. The holdout window was opened once, after "
+        "feature-set selection, and never used for tuning.")
 
 # ===========================================================================
 with tab_explain:
@@ -239,20 +251,32 @@ with tab_explain:
                 st.markdown("**In plain language**")
                 leader = fi.iloc[0]
                 demand_share = float(share.get("demand", 0))
+                families_present = set(fi["family"])
+                external = [f for f in ("fema", "fred") if f in families_present]
+                if external:
+                    external_line = (
+                        f"- External context ({' and '.join(f.upper() for f in external)})"
+                        f" contributes "
+                        f"{sum(share.get(f, 0) for f in external):.2%}, which is why "
+                        f"the ablation verdict above should be read carefully.")
+                else:
+                    external_line = (
+                        "- External context (FEMA and FRED) is not in the selected "
+                        "feature set, so it has no attribution here by construction - "
+                        "read the ablation verdict above for whether it helps.")
                 st.markdown(
                     f"- Recent demand history dominates: it accounts for "
                     f"{demand_share:.0%} of total model gain, led by "
                     f"`{leader['feature']}`.\n"
                     f"- Calendar effects contribute {share.get('calendar', 0):.1%} - "
                     f"weekday and SNAP timing shift grocery demand systematically.\n"
-                    f"- Price features contribute {share.get('price', 0):.1%}: a higher "
-                    f"price relative to a product's own recent average pushes the "
-                    f"forecast down.\n"
-                    f"- External context (FEMA and FRED) contributes "
-                    f"{share.get('fema', 0) + share.get('fred', 0):.2%}, which is why "
-                    f"the ablation verdict above should be read carefully.")
-                st.caption("Attribution describes what the model relies on. It does "
-                           "not establish that any feature causes demand to change.")
+                    f"- Price features contribute {share.get('price', 0):.1%}, mainly "
+                    f"price relative to a product's own recent average.\n"
+                    + external_line)
+                st.caption("Attribution measures how much the model relies on each "
+                           "feature, not the direction of its effect - these values "
+                           "are unsigned. It does not establish that any feature "
+                           "causes demand to change.")
 
         with st.container(border=True):
             st.markdown("**Full attribution table**")

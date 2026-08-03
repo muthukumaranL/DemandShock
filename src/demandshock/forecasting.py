@@ -151,6 +151,10 @@ def train_lgbm(cfg: Config, frame: pd.DataFrame, fold: FoldSpec, config_name: st
     params = cfg.lgbm_params()
     if params_override:
         params.update(params_override)
+    # A Tweedie-only parameter left behind by a caller would be meaningless (and
+    # confusing in the recorded metadata) under any other objective.
+    if params.get("objective") != "tweedie":
+        params.pop("tweedie_variance_power", None)
 
     train = _slice_training_rows(frame, fold, cfg.train_window_days)
     if train.empty:

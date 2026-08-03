@@ -614,6 +614,7 @@ def attach_context(cfg: Config, episodes: pd.DataFrame, fema_context: pd.DataFra
                 "incident_begin": str(pd.Timestamp(m.incident_begin).date()),
                 "incident_end": str(pd.Timestamp(m.incident_end).date()),
                 "end_estimated": bool(m.end_imputed),
+                "end_clipped": bool(getattr(m, "end_clipped", False)),
                 "counties_designated": int(m.n_counties),
                 "overlap_days": max(overlap_days, 0),
             })
@@ -660,7 +661,12 @@ def format_fema_sentence(payload: dict) -> str:
     events = payload["events"]
     head = events[0]
     extra = f" (and {len(events) - 1} other declaration(s))" if len(events) > 1 else ""
-    estimated = " (end date estimated)" if head.get("end_estimated") else ""
+    if head.get("end_clipped"):
+        estimated = " (ongoing at data window end)"
+    elif head.get("end_estimated"):
+        estimated = " (end date estimated)"
+    else:
+        estimated = ""
     return (
         f"{len(events)} FEMA-declared event(s) were active in {payload['state']} "
         f"during this episode window: \"{head['title']}\" ({head['incidentType']}, "

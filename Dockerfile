@@ -24,11 +24,15 @@ COPY .streamlit/ ./.streamlit/
 
 ENV PYTHONPATH=/app/src
 
-# The source datasets are NOT baked into the image (M5 terms). Mount them:
-#   docker run -p 8501:8501 -v "$(pwd)/datasets:/app/datasets" demandshock
-# Build the artifacts once inside the container before serving:
-#   docker run -v "$(pwd)/datasets:/app/datasets" -v "$(pwd)/artifacts:/app/artifacts" \
+# Neither the source datasets (M5 terms) nor the built artifacts are baked into the
+# image. Build the artifacts once, mounting datasets plus the outputs:
+#   docker run -v "$(pwd)/datasets:/app/datasets" -v "$(pwd)/data:/app/data" \
+#     -v "$(pwd)/artifacts:/app/artifacts" -v "$(pwd)/models:/app/models" \
 #     demandshock python scripts/run_pipeline.py --mode development
+# Then serve, mounting the processed tables AND the artifacts the app reads:
+#   docker run -p 8501:8501 -v "$(pwd)/data:/app/data" \
+#     -v "$(pwd)/artifacts:/app/artifacts" demandshock
+# Without both mounts the app starts and shows its "artifacts not built" panel.
 
 EXPOSE 8501
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s \

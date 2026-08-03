@@ -1,8 +1,8 @@
 # DemandShock - measured results
 
-*Generated 2026-08-03T10:41:56+00:00 from the artifacts in `artifacts/`. Every figure below is produced by `scripts/export_results.py` reading files on disk - none is typed by hand.*
+*Generated 2026-08-03T18:15:19+00:00 from the artifacts in `artifacts/`. Every figure below is produced by `scripts/export_results.py` reading files on disk - none is typed by hand.*
 
-**Run mode:** `full` &nbsp;|&nbsp; **trained:** 2026-08-03T10:09:58+00:00 &nbsp;|&nbsp; **config hash:** `3cb8d141be90`
+**Run mode:** `full` &nbsp;|&nbsp; **trained:** 2026-08-03T18:04:03+00:00 &nbsp;|&nbsp; **config hash:** `fcbd0adf252c`
 
 ## Data actually processed
 
@@ -68,7 +68,7 @@ Mean across folds F1, F2, F3 at horizon 28, identical seed, parameters and rows 
 - **FEMA disaster context: improved accuracy.** WAPE fell 0.0004 (0.05% relative), better on 1 of 3 folds. This is smaller than the 0.0087 fold-to-fold spread, so it is a marginal gain, not a decisive one.
 - **FRED economic context: did NOT improve accuracy.** WAPE rose 0.0001 (0.01% relative), better on only 1 of 3 folds.
 
-For perspective, FEMA features account for 0.00% of total model gain and FRED features 0.00%. Read the WAPE deltas above against those shares before concluding that external data improves point forecasts.
+FEMA and FRED features are not part of the selected feature set, so they carry no attribution here by construction - the ablation table above is the evidence on whether they help.
 
 **Share of model gain by feature family**
 

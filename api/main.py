@@ -19,8 +19,10 @@ from typing import Any, Literal
 
 import pandas as pd
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT / "src") not in sys.path:
@@ -57,6 +59,10 @@ class Health(BaseModel):
 
 
 class Metadata(BaseModel):
+    # `model_*` fields are meaningful here (they describe the forecasting model),
+    # so opt out of pydantic's protected namespace instead of renaming them.
+    model_config = ConfigDict(protected_namespaces=())
+
     model_name: str
     model_version: str
     mode: str
@@ -117,6 +123,8 @@ class Episode(BaseModel):
 
 class ShockList(BaseModel):
     count: int
+    total_matching: int
+    truncated: bool
     scored_window: dict[str, str]
     interpretation: str
     episodes: list[Episode]
@@ -140,6 +148,8 @@ class MetricRow(BaseModel):
 
 class MetricsResponse(BaseModel):
     count: int
+    total_matching: int
+    truncated: bool
     note: str
     rows: list[MetricRow]
 
@@ -158,7 +168,9 @@ class InventoryRequest(BaseModel):
 class InventoryResponse(BaseModel):
     item_id: str
     store_id: str
-    inputs_are_user_supplied: bool = True
+    inputs_are_user_supplied: bool
+    service_level: float
+    service_level_defaulted: bool
     z: float
     sigma_daily: float
     lead_time_days_used: int
@@ -355,6 +367,7 @@ def get_shocks(
         frame = frame[frame["end_date"] >= pd.Timestamp(start)]
     if end:
         frame = frame[frame["start_date"] <= pd.Timestamp(end)]
+    total_matching = int(len(frame))
     frame = frame.sort_values("peak_score", ascending=False).head(limit)
 
     episodes = [
@@ -381,7 +394,8 @@ def get_shocks(
                    default="?"),
     }
     return ShockList(
-        count=len(episodes), scored_window=window,
+        count=len(episodes), total_matching=total_matching,
+        truncated=total_matching > len(episodes), scored_window=window,
         interpretation=("Scores measure deviation from model expectation on days that "
                         "already happened. FEMA overlap indicates temporal coincidence "
                         "within a state, never causation."),
@@ -406,7 +420,12 @@ def get_metrics(
             frame = frame[frame[column] == value]
     if horizon is not None:
         frame = frame[frame["horizon"] == horizon]
-    frame = frame.head(limit)
+    total_matching = int(len(frame))
+    # Deterministic ordering before truncation, so `limit` drops a predictable tail
+    # rather than an arbitrary one.
+    frame = frame.sort_values(
+        ["model", "config", "fold_id", "level", "horizon", "group_key"],
+        kind="stable", na_position="last").head(limit)
 
     rows = [
         MetricRow(
@@ -419,7 +438,8 @@ def get_metrics(
         for r in frame.itertuples(index=False)
     ]
     return MetricsResponse(
-        count=len(rows),
+        count=len(rows), total_matching=total_matching,
+        truncated=total_matching > len(rows),
         note=("RMSSE is per-series and aggregated as an unweighted mean; the official "
               "M5 WRMSSE is not implemented and is not reported. sMAPE is unstable on "
               "intermittent demand - prefer WAPE."),
@@ -463,8 +483,21 @@ def inventory_analysis(request: InventoryRequest) -> InventoryResponse:
         request.lead_time_days, request.service_level,
         on_hand_units=request.on_hand_units, unit_cost=request.unit_cost,
         unit_price=float(row["latest_sell_price"]))
+
+    # A defaulted service level is an assumption WE made, not one the caller
+    # supplied - say so rather than asserting every input was user-provided.
+    defaulted = "service_level" not in request.model_fields_set
+    assumptions = list(result["assumptions"])
+    if defaulted:
+        assumptions.insert(0, (
+            f"service_level {request.service_level} was applied by default because "
+            f"the request omitted it - supply your own operating target."))
+
     return InventoryResponse(
         item_id=request.item_id, store_id=request.store_id,
+        inputs_are_user_supplied=not defaulted,
+        service_level=float(result["service_level"]),
+        service_level_defaulted=defaulted,
         z=round(result["z"], 6), sigma_daily=round(result["sigma_daily"], 6),
         lead_time_days_used=result["lead_time_days_used"],
         lead_time_clamped=result["lead_time_clamped"],
@@ -478,7 +511,21 @@ def inventory_analysis(request: InventoryRequest) -> InventoryResponse:
         projected_stockout_day=result["projected_stockout_day"],
         uncovered_units=(None if result["uncovered_units"] is None
                          else round(result["uncovered_units"], 4)),
-        formulas=result["formulas"], assumptions=result["assumptions"])
+        formulas=result["formulas"], assumptions=assumptions)
+
+
+@app.exception_handler(RequestValidationError)
+def validation_exception_handler(request, exc: RequestValidationError):
+    """Schema failures use the same error envelope as everything else."""
+    fields = ", ".join(".".join(str(p) for p in e.get("loc", ())[1:]) or "body"
+                       for e in exc.errors()) or "request"
+    return JSONResponse(
+        status_code=422,
+        content={"error": {
+            "code": "validation_error",
+            "message": f"Invalid request parameters: {fields}.",
+            "detail": jsonable_encoder(exc.errors()),
+        }})
 
 
 @app.exception_handler(HTTPException)

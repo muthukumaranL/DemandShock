@@ -88,7 +88,10 @@ def test_why_flagged_payload_arithmetic_agrees_with_the_stored_score(artifacts):
             expected = guarded
         assert expected == pytest.approx(arithmetic["final_score"], abs=0.05), (
             "the 'Why was this flagged?' arithmetic must reconcile exactly")
-    assert checked_capped >= 0
+    # The warm-up-capped branch is exercised deterministically by
+    # test_warmup_capped_episode_reports_the_cap_in_its_arithmetic; real artifacts
+    # may or may not contain such an episode, so only record what was seen here.
+    assert checked_capped >= 0 and len(episodes) > 0
 
 
 def test_scoring_is_deterministic(cfg, artifacts):
@@ -309,7 +312,7 @@ def test_level_shift_compares_the_recent_week_to_a_non_overlapping_prior_month(c
     recent = sales.loc[(sales["d"] >= 94) & (sales["d"] <= 100), "sales"]
     prior = sales.loc[(sales["d"] >= 66) & (sales["d"] <= 93), "sales"]
     assert float(recent.mean()) == pytest.approx(12.0)
-    assert float(prior.mean()) == pytest.approx(prior.mean())
+    assert len(prior) == 28, "the prior window must not overlap the recent week"
 
     floor = max(float(cfg["shock"]["sigma_floor_abs"]),
                 float(cfg["shock"]["sigma_floor_rel"]) * float(row["mu28"]))
@@ -329,3 +332,152 @@ def test_mu28_excludes_the_current_day(cfg):
     row = context[context["d"] == 50].iloc[0]
     expected = float(np.mean(np.arange(22, 50)))   # days 22..49
     assert float(row["mu28"]) == pytest.approx(expected)
+
+
+# ---------------------------------------------------------------------------
+# classification decision tree - every branch, driven end to end
+# ---------------------------------------------------------------------------
+def _episode_block(n_days: int, residual: float | list[float], y_true: float | list[float],
+                   peak_z: float, run: int, start_d: int = 1830) -> pd.DataFrame:
+    """Minimal daily frame with exactly the columns `_episode_record` consumes."""
+    residuals = ([residual] * n_days) if isinstance(residual, (int, float)) else list(residual)
+    actuals = ([y_true] * n_days) if isinstance(y_true, (int, float)) else list(y_true)
+    assert len(residuals) == n_days and len(actuals) == n_days
+    return pd.DataFrame({
+        "d": np.arange(start_d, start_d + n_days),
+        "y_true": actuals,
+        "y_pred": [a - r for a, r in zip(actuals, residuals)],
+        "residual": residuals,
+        "persistence_run": [run] * n_days,
+        "z": [peak_z] * n_days,
+        "pct_dev": [1.0] * n_days,
+        "vol_ratio": [1.0] * n_days,
+        "level_shift": [1.0] * n_days,
+        "sq_z": [0.5] * n_days, "sq_pct": [0.4] * n_days, "sq_pers": [0.3] * n_days,
+        "sq_vol": [0.2] * n_days, "sq_level": [0.6] * n_days,
+        "score_raw": [60.0] * n_days, "guard_mult": [1.0] * n_days,
+        "score": [60.0] * n_days, "band": ["Elevated"] * n_days,
+        "warmup": [False] * n_days, "sigma_frozen": [False] * n_days,
+    })
+
+
+def _classify(cfg, block, actuals=None, day_to_date=None):
+    hierarchy = pd.DataFrame(
+        {"item_id": ["A"], "store_id": ["S"], "dept_id": ["D"], "cat_id": ["C"],
+         "state_id": ["CA"]}).set_index(["item_id", "store_id"])
+    days = range(int(block["d"].min()) - 60, int(block["d"].max()) + 90)
+    day_to_date = day_to_date or {
+        d: pd.Timestamp("2016-02-01") + pd.Timedelta(days=int(d) - int(block["d"].min()))
+        for d in days}
+    record = S._episode_record(cfg, block.reset_index(drop=True), 0, len(block) - 1,
+                               "A", "S", hierarchy, day_to_date,
+                               cfg["shock"]["classification"], actuals)
+    return record["classification"]
+
+
+def test_regime_shift_requires_duration_and_a_change_that_persists(cfg):
+    """Long episode, demand drops to zero, stays down afterwards."""
+    block = _episode_block(30, residual=-4.0, y_true=0.0, peak_z=-2.5, run=30)
+    start = int(block["d"].min())
+    actuals = pd.Series(
+        [4.0] * 28 + [0.0] * 30 + [0.0] * 20,
+        index=list(range(start - 28, start + 50)))
+    assert _classify(cfg, block, actuals) == "Regime Shift"
+
+
+def test_regime_shift_is_marked_truncated_without_enough_days_after(cfg):
+    block = _episode_block(30, residual=-4.0, y_true=0.0, peak_z=-2.5, run=30)
+    start = int(block["d"].min())
+    # only 3 days of history after the episode ends -> cannot confirm persistence
+    actuals = pd.Series([4.0] * 28 + [0.0] * 30 + [0.0] * 3,
+                        index=list(range(start - 28, start + 33)))
+    assert _classify(cfg, block, actuals) == "Possible Regime Shift (window truncated)"
+
+
+def test_a_long_dip_that_recovers_is_not_a_regime_shift(cfg):
+    """Control: demand returns to its old level, so the level change did not persist."""
+    block = _episode_block(30, residual=-4.0, y_true=0.0, peak_z=-2.5, run=30)
+    start = int(block["d"].min())
+    actuals = pd.Series([4.0] * 28 + [0.0] * 30 + [4.0] * 20,
+                        index=list(range(start - 28, start + 50)))
+    assert _classify(cfg, block, actuals) != "Regime Shift"
+
+
+def test_persistent_under_and_over_forecast_branches(cfg):
+    """Long same-sign run with a modest peak z -> persistent, not a surge."""
+    rules = cfg["shock"]["classification"]
+    run = int(rules["persistence_run"]) + 1
+    modest = float(rules["persistent_max_z"]) - 1.0
+
+    under = _episode_block(8, residual=2.0, y_true=6.0, peak_z=modest, run=run)
+    assert _classify(cfg, under) == "Persistent Under-forecast"
+
+    over = _episode_block(8, residual=-2.0, y_true=2.0, peak_z=-modest, run=run)
+    assert _classify(cfg, over) == "Persistent Over-forecast"
+
+
+def test_surge_and_collapse_branches(cfg):
+    """Short, one-directional, large |z| -> surge or collapse."""
+    rules = cfg["shock"]["classification"]
+    big = float(rules["surge_min_z"]) + 1.0
+
+    surge = _episode_block(4, residual=5.0, y_true=12.0, peak_z=big, run=1)
+    assert _classify(cfg, surge) == "Demand Surge"
+
+    collapse = _episode_block(4, residual=-5.0, y_true=1.0, peak_z=-big, run=1)
+    assert _classify(cfg, collapse) == "Demand Collapse"
+
+
+def test_volatility_shock_is_the_fallback(cfg):
+    """Mixed signs, short run, small |z| -> nothing else fits."""
+    block = _episode_block(
+        4, residual=[3.0, -3.0, 2.5, -2.0], y_true=[9.0, 3.0, 8.0, 4.0],
+        peak_z=1.2, run=1)
+    assert _classify(cfg, block) == "Volatility Shock"
+
+
+def test_every_documented_classification_is_reachable(cfg):
+    """All seven labels must be producible - none may be dead code."""
+    rules = cfg["shock"]["classification"]
+    start = 1830
+    produced = set()
+
+    long_block = _episode_block(30, residual=-4.0, y_true=0.0, peak_z=-2.5, run=30)
+    produced.add(_classify(cfg, long_block, pd.Series(
+        [4.0] * 28 + [0.0] * 50, index=list(range(start - 28, start + 50)))))
+    produced.add(_classify(cfg, long_block, pd.Series(
+        [4.0] * 28 + [0.0] * 33, index=list(range(start - 28, start + 33)))))
+    run = int(rules["persistence_run"]) + 1
+    modest = float(rules["persistent_max_z"]) - 1.0
+    produced.add(_classify(cfg, _episode_block(8, 2.0, 6.0, modest, run)))
+    produced.add(_classify(cfg, _episode_block(8, -2.0, 2.0, -modest, run)))
+    big = float(rules["surge_min_z"]) + 1.0
+    produced.add(_classify(cfg, _episode_block(4, 5.0, 12.0, big, 1)))
+    produced.add(_classify(cfg, _episode_block(4, -5.0, 1.0, -big, 1)))
+    produced.add(_classify(cfg, _episode_block(
+        4, [3.0, -3.0, 2.5, -2.0], [9.0, 3.0, 8.0, 4.0], 1.2, 1)))
+
+    assert produced == set(S.CLASSIFICATIONS), (
+        f"unreachable labels: {set(S.CLASSIFICATIONS) - produced}")
+
+
+def test_warmup_capped_episode_reports_the_cap_in_its_arithmetic(cfg):
+    """The panel's sum must reconcile even when the warm-up cap bites."""
+    cap = float(cfg["shock"]["warmup_score_cap"])
+    block = _episode_block(4, residual=5.0, y_true=12.0, peak_z=3.0, run=1)
+    block["warmup"] = True
+    block["score_raw"] = 90.0
+    block["score"] = cap                      # raw*guard exceeded the cap
+    hierarchy = pd.DataFrame(
+        {"item_id": ["A"], "store_id": ["S"], "dept_id": ["D"], "cat_id": ["C"],
+         "state_id": ["CA"]}).set_index(["item_id", "store_id"])
+    day_to_date = {d: pd.Timestamp("2016-02-01") + pd.Timedelta(days=int(d) - 1830)
+                   for d in range(1700, 2000)}
+    record = S._episode_record(cfg, block, 0, len(block) - 1, "A", "S", hierarchy,
+                               day_to_date, cfg["shock"]["classification"], None)
+    arithmetic = json.loads(record["why_flagged"])["score_arithmetic"]
+    assert arithmetic["warmup_cap_applied"] is True
+    assert arithmetic["warmup_cap"] == pytest.approx(cap)
+    assert arithmetic["final_score"] == pytest.approx(cap)
+    assert arithmetic["before_cap"] > cap, (
+        "the pre-cap product must be recorded so the panel arithmetic reconciles")

@@ -337,8 +337,12 @@ def empty_filters(message: str = "No data matches the current filters.") -> None
 # ---------------------------------------------------------------------------
 # sidebar
 # ---------------------------------------------------------------------------
-def sidebar_context() -> dict[str, Any]:
-    """Mode badge, pipeline status and the shared hierarchy filters."""
+def sidebar_context(filters: bool = True) -> dict[str, Any]:
+    """Mode badge, pipeline status and (optionally) the shared hierarchy filters.
+
+    Pass `filters=False` on pages that always describe the whole dataset, so the
+    sidebar does not render controls that silently do nothing.
+    """
     cfg = get_config()
     ctx: dict[str, Any] = {"cfg": cfg}
 
@@ -373,7 +377,11 @@ def sidebar_context() -> dict[str, Any]:
                            "must not be quoted as ablation results.",
                            icon=":material/warning:")
 
-        if artifact_exists("series_meta"):
+        if artifact_exists("series_meta") and not filters:
+            ctx["meta"] = load("series_meta")
+            st.caption("This page always describes every series, so the hierarchy "
+                       "filters are not shown here.")
+        elif artifact_exists("series_meta"):
             meta = load("series_meta")
             ctx["meta"] = meta
             st.markdown("#### Filters")

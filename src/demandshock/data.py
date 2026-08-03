@@ -445,6 +445,10 @@ def load_fema_disasters(cfg: Config, calendar: pd.DataFrame,
     grouped["end_imputed"] = grouped["incidentEndDate"].isna()
     grouped["incidentEndDate"] = grouped["incidentEndDate"].fillna(
         grouped["incidentBeginDate"] + pd.Timedelta(days=impute_days))
+    # Incidents still open when the retail data ends are truncated to the window.
+    # Record it so the app can say "ongoing at data window end" instead of implying
+    # the incident really finished on the last day of M5.
+    grouped["end_clipped"] = grouped["incidentEndDate"] > win_hi
     grouped["incidentEndDate"] = grouped["incidentEndDate"].clip(upper=win_hi)
     grouped["n_counties"] = grouped["n_counties"].astype("int16")
 
@@ -540,6 +544,7 @@ def build_fema_tables(cfg: Config, calendar: pd.DataFrame, disasters: pd.DataFra
             "incident_begin": row.incidentBeginDate,
             "incident_end": row.incidentEndDate,
             "end_imputed": bool(row.end_imputed),
+            "end_clipped": bool(row.end_clipped),
             "n_counties": int(row.n_counties),
         })
 

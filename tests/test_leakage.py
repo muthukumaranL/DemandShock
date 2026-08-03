@@ -241,8 +241,13 @@ def test_fred_features_are_origin_snapshots(cfg, features):
 # ---------------------------------------------------------------------------
 # joins
 # ---------------------------------------------------------------------------
-def test_price_join_matches_the_source_csv(cfg, features):
-    """sell_price in the feature table must equal sell_prices.csv for that week."""
+def test_price_join_uses_the_right_week(cfg, features):
+    """sell_price at day t must be the processed price for t's own retail week.
+
+    This checks the JOIN (feature table vs prices_long), not the ingest. The
+    prices_long-vs-sell_prices.csv chain is verified separately in
+    tests/test_provenance.py so the two checks cannot both be wrong in the same way.
+    """
     calendar = D.load_calendar(cfg)
     prices = D.read_processed(cfg, "prices_long")
     week_of_day = dict(zip(calendar["d"], calendar["wm_yr_wk"]))
@@ -265,14 +270,21 @@ def test_snap_uses_the_stores_own_state(cfg, features):
         state: dict(zip(calendar["d"], calendar[f"snap_{state}"]))
         for state in ("CA", "TX", "WI")
     }
+    disagreements = 0
     for row in sample.itertuples(index=False):
-        expected = snap_by_day[str(row.state_id)][int(row.d)]
+        state = str(row.state_id)
+        expected = snap_by_day[state][int(row.d)]
         assert int(row.snap) == int(expected), (
-            f"SNAP mismatch for {row.state_id} on d={row.d}")
-        # and it must NOT silently be another state's schedule
-        others = {s: snap_by_day[s][int(row.d)] for s in ("CA", "TX", "WI")
-                  if s != str(row.state_id)}
-        del others
+            f"SNAP mismatch for {state} on d={row.d}")
+        # Count days where the other states' schedules differ: on those days a
+        # wrong-state join would have produced a different value, so the assertion
+        # above is genuinely discriminating rather than trivially satisfied.
+        if any(snap_by_day[s][int(row.d)] != expected
+               for s in ("CA", "TX", "WI") if s != state):
+            disagreements += 1
+    assert disagreements > 0, (
+        "no sampled day distinguished the states' SNAP schedules, so this test "
+        "could not have caught a wrong-state join")
 
 
 def test_no_pre_release_rows_survive(cfg, features, series_meta):

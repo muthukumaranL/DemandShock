@@ -186,7 +186,8 @@ history; and a warm-up cap. The residual dispersion is **frozen at its pre-episo
 value while an episode is open**, so a long episode cannot inflate its own baseline
 and silently damp its later days.
 
-**Bands:** Normal 0–29 · Watch 30–49 · Elevated 50–69 · Severe 70–84 · Critical 85–100.
+**Bands** (half-open intervals, matching the code): Normal [0,30) · Watch [30,50) ·
+Elevated [50,70) · Severe [70,85) · Critical [85,100].
 
 **Episodes** seed at 30, bridge a single quiet day, and close after two. Each is
 classified as Demand Surge, Demand Collapse, Volatility Shock, Persistent
@@ -316,9 +317,19 @@ The suite is release-gating and covers:
 docker build -t demandshock .
 ```
 
+The image contains code only — datasets and built artifacts are mounted, never baked
+in. Build the artifacts once, then serve them:
+
 ```bash
-docker run -p 8501:8501 -v "$(pwd)/datasets:/app/datasets" demandshock
+docker run -v "$(pwd)/datasets:/app/datasets" -v "$(pwd)/data:/app/data" -v "$(pwd)/artifacts:/app/artifacts" -v "$(pwd)/models:/app/models" demandshock python scripts/run_pipeline.py --mode development
 ```
+
+```bash
+docker run -p 8501:8501 -v "$(pwd)/data:/app/data" -v "$(pwd)/artifacts:/app/artifacts" demandshock
+```
+
+The serving container needs both `data/` and `artifacts/` mounted: without them the
+app starts and shows its "artifacts not built" panel rather than any results.
 
 ---
 
@@ -327,7 +338,7 @@ docker run -p 8501:8501 -v "$(pwd)/datasets:/app/datasets" demandshock
 ```
 demandshock/
 ├── app/                    Streamlit — Home + 5 module pages + shared.py
-├── api/main.py             FastAPI — 6 read-only endpoints
+├── api/main.py             FastAPI — 6 endpoints (5 GET + 1 stateless POST)
 ├── src/demandshock/        config, data, features, forecasting, metrics,
 │                           shock, inventory
 ├── scripts/                smoke_deps, prepare_data, train, evaluate,
@@ -357,6 +368,17 @@ demandshock/
 - **No formal forecast reconciliation.** Aggregation across the hierarchy is bottom-up.
 - **No causal inference.** External signals are treated as association only.
 - **Weather is out of scope** in this version.
+- **FEMA flags switch off using retrospective end dates.** The *onset* of a
+  declaration is strictly point-in-time (a disaster is invisible until its
+  declaration date), but the *offset* uses the recorded `incidentEndDate`, which is
+  only knowable after the fact — and 1.7% of end dates are missing and imputed at the
+  33-day in-window median. This affects only ablation arms C and D; those arms showed
+  no material accuracy gain regardless, and the selected model at full scale contains
+  no FEMA features at all.
+- **Model and benchmarks are scored on slightly different rows.** LightGBM only
+  produces forecasts for item-days with at least 84 days of post-release history (the
+  feature warm-up); the naive benchmarks have no such requirement. At full scale the
+  two scoring sets differ by a small fraction of item-days.
 
 ## Responsible use
 

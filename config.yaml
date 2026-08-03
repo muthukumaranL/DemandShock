@@ -34,6 +34,10 @@ files:
 unused_files:
   - 4365920.csv      # NOAA GHCN-Daily (weather excluded from this version)
   - 4365923.csv      # NOAA GHCN-Daily
+  - 4365923.xlsx     # NOAA GHCN-Daily (spreadsheet duplicate)
+  - CAUR.xlsx        # spreadsheet duplicate of the FRED CSV
+  - TXUR.xlsx
+  - WIUR.xlsx
   - sample_submission.csv
 
 development:
@@ -72,9 +76,12 @@ features:
   price_momentum_weeks: 4
 
 fema:
+  # Onset gating needs no separate setting: state-day snapshots activate on the
+  # declaration date and are joined at the forecast origin (t - features.demand_shift),
+  # so nothing declared inside the horizon can reach the model. See
+  # features._external_features.
   states: [CA, TX, WI]
   end_impute_days: 33                # in-window median incident duration
-  declaration_gate_days: 28          # declaration must precede origin (t - 28)
   days_since_declaration_cap: 90
   context_lead_days: 7               # context attachment tolerance for episodes
 

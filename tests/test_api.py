@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
+import api.main as api_main  # noqa: E402
 from api.main import app, missing_artifacts  # noqa: E402
 
 
@@ -134,6 +135,71 @@ def test_inventory_validation_rejects_impossible_inputs(client, known_series):
         response = client.post("/inventory-analysis",
                                json={"item_id": item_id, "store_id": store_id, **payload})
         assert response.status_code == 422
+
+
+def test_schema_validation_uses_the_documented_error_envelope(client, known_series):
+    """A pydantic failure must look like every other error, not FastAPI's default."""
+    item_id, store_id = known_series
+    response = client.post("/inventory-analysis", json={
+        "item_id": item_id, "store_id": store_id,
+        "lead_time_days": 7, "service_level": 5.0})
+    assert response.status_code == 422
+    body = response.json()
+    assert "error" in body, f"expected the {{'error': ...}} envelope, got {body}"
+    assert body["error"]["code"] == "validation_error"
+    assert "service_level" in body["error"]["message"]
+
+
+def test_a_defaulted_service_level_is_declared_not_presented_as_user_input(
+        client, known_series):
+    """M5 has no service levels; if the API supplies one, it must say so."""
+    item_id, store_id = known_series
+    body = client.post("/inventory-analysis", json={
+        "item_id": item_id, "store_id": store_id, "lead_time_days": 7}).json()
+    assert body["service_level_defaulted"] is True
+    assert body["inputs_are_user_supplied"] is False
+    assert body["service_level"] == pytest.approx(0.95)
+    assert any("default" in a.lower() for a in body["assumptions"])
+
+    supplied = client.post("/inventory-analysis", json={
+        "item_id": item_id, "store_id": store_id,
+        "lead_time_days": 7, "service_level": 0.99}).json()
+    assert supplied["service_level_defaulted"] is False
+    assert supplied["inputs_are_user_supplied"] is True
+    assert supplied["service_level"] == pytest.approx(0.99)
+
+
+def test_missing_artifacts_return_503_with_a_rebuild_command(client, monkeypatch, built):
+    if not built:
+        pytest.skip("artifacts not built")
+    monkeypatch.setitem(api_main.REQUIRED, "metrics",
+                        "artifacts/__does_not_exist__.parquet")
+    response = client.get("/metrics")
+    assert response.status_code == 503
+    error = response.json()["error"]
+    assert error["code"] == "artifacts_missing"
+    assert "run_pipeline" in error["message"]
+
+
+def test_list_endpoints_disclose_truncation(client, built):
+    if not built:
+        pytest.skip("artifacts not built")
+    shocks = client.get("/shocks", params={"min_score": 0, "limit": 1}).json()
+    assert shocks["count"] == 1
+    assert shocks["total_matching"] >= shocks["count"]
+    assert shocks["truncated"] == (shocks["total_matching"] > shocks["count"])
+
+    metrics = client.get("/metrics", params={"limit": 2}).json()
+    assert metrics["count"] <= 2
+    assert metrics["total_matching"] >= metrics["count"]
+
+
+def test_metrics_truncation_is_deterministic(client, built):
+    if not built:
+        pytest.skip("artifacts not built")
+    first = client.get("/metrics", params={"limit": 5}).json()["rows"]
+    second = client.get("/metrics", params={"limit": 5}).json()["rows"]
+    assert first == second, "the same query must drop the same rows every time"
 
 
 def test_openapi_schema_builds(client):
