@@ -1,0 +1,18 @@
+# Raw and derived data are NOT redistributed (M5 competition terms).
+datasets/
+data/processed/
+data/raw/*
+!data/raw/README.md
+artifacts/
+models/
+
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ipynb_checkpoints/
+*.egg-info/
+.venv/
+venv/
+.env
+.DS_Store
+Thumbs.db

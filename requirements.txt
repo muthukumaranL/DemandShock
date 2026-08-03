@@ -1,0 +1,19 @@
+# DemandShock — pinned to the versions verified in this environment (Python 3.14.4).
+pandas==3.0.2
+numpy==2.4.4
+pyarrow==23.0.1
+scipy==1.17.1
+scikit-learn==1.8.0
+lightgbm==4.6.0
+plotly==6.8.0
+streamlit==1.58.0
+fastapi==0.139.0
+uvicorn==0.49.0
+joblib==1.5.3
+PyYAML>=6.0
+pytest==9.0.3
+httpx>=0.27          # required by fastapi.testclient
+
+# Optional. LightGBM's native pred_contrib already provides exact TreeSHAP values,
+# so the platform never depends on this package being installed.
+# shap>=0.46
