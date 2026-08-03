@@ -398,6 +398,11 @@ def _episode_record(cfg: Config, block: pd.DataFrame, start_i: int, end_i: int,
         "level_shift": weights["level_shift"] * float(peak["sq_level"]),
     }
     dominant = max(points, key=points.get)
+    # The warm-up cap is part of the arithmetic the UI shows, so record it rather
+    # than leaving the displayed sum disagreeing with the stored score.
+    guarded = float(peak["score_raw"]) * float(peak["guard_mult"])
+    warmup_cap = float(cfg["shock"]["warmup_score_cap"])
+    cap_applied = bool(peak["warmup"]) and guarded > warmup_cap + 1e-9
     residuals = window["residual"].to_numpy()
     sign_share_pos = float((residuals > 0).mean())
     max_run = int(window["persistence_run"].max())
@@ -524,9 +529,16 @@ def _episode_record(cfg: Config, block: pd.DataFrame, start_i: int, end_i: int,
         "score_arithmetic": {
             "raw_total": round(float(peak["score_raw"]), 2),
             "guard_multiplier": round(float(peak["guard_mult"]), 3),
+            "before_cap": round(guarded, 2),
+            "warmup_cap_applied": cap_applied,
+            "warmup_cap": (round(warmup_cap, 2) if cap_applied else None),
             "final_score": round(float(peak["score"]), 2),
-            "note": ("final = raw x guard multiplier; the guard damps low-volume "
-                     "series so a 0->2 unit move cannot read as a crisis"),
+            "note": ("final = raw x guard multiplier"
+                     + (", then capped because the peak day fell in the warm-up "
+                        "period where too little residual history exists to justify "
+                        "a higher score" if cap_applied else "")
+                     + "; the guard damps low-volume series so a 0->2 unit move "
+                       "cannot read as a crisis"),
         },
         "level_change_vs_baseline": (round(float(level_change), 2)
                                      if np.isfinite(level_change) else None),

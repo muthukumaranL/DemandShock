@@ -45,18 +45,33 @@ def calendar(cfg, raw_available):
 
 
 @pytest.fixture(scope="session")
-def features(cfg, processed_available):
-    """The real development-mode feature matrix."""
+def test_store(cfg, processed_available) -> str:
+    """One real store. Tests are per-series, so a single partition is enough and
+    keeps them fast whether the pipeline last ran in development or full mode."""
     if not processed_available:
-        pytest.skip("processed features not built; run scripts/prepare_data.py")
-    return F.load_features(cfg)
+        pytest.skip("processed data not built; run scripts/prepare_data.py")
+    partitions = sorted((cfg.processed_dir / "features").glob("store_id=*"))
+    if not partitions:
+        pytest.skip("no feature partitions found")
+    return partitions[0].name.split("=", 1)[1]
 
 
 @pytest.fixture(scope="session")
-def sales_long(cfg, processed_available):
+def features(cfg, processed_available, test_store):
+    """Real feature rows for one store (full mode holds 25M+ rows in total)."""
+    if not processed_available:
+        pytest.skip("processed features not built; run scripts/prepare_data.py")
+    frame = F.load_features(cfg, stores=[test_store])
+    if "store_id" not in frame.columns:
+        frame = frame.assign(store_id=test_store)
+    return frame
+
+
+@pytest.fixture(scope="session")
+def sales_long(cfg, processed_available, test_store):
     if not processed_available:
         pytest.skip("processed data not built; run scripts/prepare_data.py")
-    return D.read_sales_long(cfg)
+    return D.read_sales_long(cfg, stores=[test_store])
 
 
 @pytest.fixture(scope="session")
@@ -67,18 +82,26 @@ def series_meta(cfg, processed_available):
 
 
 @pytest.fixture(scope="session")
-def busy_series(sales_long) -> str:
-    """A real item with plenty of non-zero demand - best signal for feature tests."""
+def busy_series(sales_long, test_store) -> tuple[str, str]:
+    """A real item-store series with plenty of non-zero demand.
+
+    Keyed by BOTH ids: an item_id alone is not a series - the same product exists
+    in up to ten stores with different release dates and demand histories.
+    """
     totals = sales_long.groupby("item_id", observed=True)["sales"].sum()
-    return str(totals.idxmax())
+    return str(totals.idxmax()), test_store
 
 
 @pytest.fixture(scope="session")
 def real_series_frame(cfg, sales_long, series_meta, busy_series) -> pd.DataFrame:
     """One real series, contiguous daily, ready for feature-function unit tests."""
-    frame = sales_long[sales_long["item_id"] == busy_series].copy()
+    item_id, store_id = busy_series
+    frame = sales_long[sales_long["item_id"].astype(str) == item_id].copy()
     frame["item_id"] = frame["item_id"].astype(str)
+    frame["store_id"] = store_id
     frame["sales"] = frame["sales"].astype("float32")
-    meta = series_meta[series_meta["item_id"] == busy_series].iloc[0]
+    meta = series_meta[(series_meta["item_id"].astype(str) == item_id)
+                       & (series_meta["store_id"].astype(str) == store_id)].iloc[0]
     frame["release_d"] = int(meta["release_d"])
+    assert not frame["d"].duplicated().any(), "fixture must be a single series"
     return frame.sort_values("d").reset_index(drop=True)

@@ -1,19 +1,19 @@
 # DemandShock - measured results
 
-*Generated 2026-08-03T08:53:28+00:00 from the artifacts in `artifacts/`. Every figure below is produced by `scripts/export_results.py` reading files on disk - none is typed by hand.*
+*Generated 2026-08-03T10:41:56+00:00 from the artifacts in `artifacts/`. Every figure below is produced by `scripts/export_results.py` reading files on disk - none is typed by hand.*
 
-**Run mode:** `development` &nbsp;|&nbsp; **trained:** 2026-08-03T08:32:55+00:00 &nbsp;|&nbsp; **config hash:** `a9ad299bd0b3`
+**Run mode:** `full` &nbsp;|&nbsp; **trained:** 2026-08-03T10:09:58+00:00 &nbsp;|&nbsp; **config hash:** `3cb8d141be90`
 
 ## Data actually processed
 
 | Quantity | Value |
 | --- | --- |
-| Real series (item x store) | 200 |
-| Item-days after release filtering | 329,624 |
-| Weekly price records | 48,032 |
-| Stores / categories / departments | 1 / 1 / 1 |
+| Real series (item x store) | 30,490 |
+| Item-days after release filtering | 46,881,677 |
+| Weekly price records | 6,841,121 |
+| Stores / categories / departments | 10 / 3 / 7 |
 | Date coverage | 2011-01-29 to 2016-06-19 (1969 days) |
-| Zero-sale share of item-days | 52.5% |
+| Zero-sale share of item-days | 59.6% |
 | FEMA disasters in window (CA/TX/WI) | 116 |
 | FRED monthly observations | 1,818 |
 | Data-quality checks | 59 passed, 0 warnings, 0 failures |
@@ -34,12 +34,12 @@ Chronological rolling-origin only. No random splitting anywhere.
 
 | Model | WAPE | RMSSE | MAE | RMSE | Bias | sMAPE |
 | --- | --- | --- | --- | --- | --- | --- |
-| LightGBM (global, Tweedie) - feature set C | 0.8737 | 0.8365 | 1.3548 | 2.3888 | -0.0738 | 124.8 |
-| Seasonal naive (lag 28) | 1.0210 | 1.0664 | 1.5832 | 2.8588 | -0.1702 | 102.2 |
-| Naive (last observed day) | 1.0428 | 1.0099 | 1.6171 | 2.9119 | -0.0392 | 98.3 |
-| Seasonal naive (lag 7) | 1.0438 | 1.0501 | 1.6186 | 2.9023 | -0.0640 | 102.4 |
+| LightGBM (global, Tweedie) - feature set B | 0.7305 | 0.7606 | 1.0540 | 2.1941 | -0.0762 | 140.3 |
+| Seasonal naive (lag 7) | 0.8622 | 0.9976 | 1.2440 | 2.6769 | -0.0736 | 83.1 |
+| Seasonal naive (lag 28) | 0.8900 | 1.0338 | 1.2840 | 2.8292 | -0.0391 | 84.0 |
+| Naive (last observed day) | 0.9516 | 1.0017 | 1.3730 | 2.8936 | 0.1319 | 85.7 |
 
-LightGBM reduces WAPE by **14.4%** against seasonal-naive-28, the benchmark that shares its exact information set. Its RMSSE of 0.8365 is below 1.0, meaning it also beats a one-day naive forecast measured on each series' own training history.
+LightGBM reduces WAPE by **17.9%** against seasonal-naive-28, the benchmark that shares its exact information set. Its RMSSE of 0.7606 is below 1.0, meaning it also beats a one-day naive forecast measured on each series' own training history.
 
 > sMAPE is reported for completeness but is misleading on intermittent demand: on a zero-sale day a naive forecast of exactly zero scores perfectly while any positive forecast is penalised the full 200%. WAPE and RMSSE are the trustworthy comparisons here.
 
@@ -47,11 +47,11 @@ LightGBM reduces WAPE by **14.4%** against seasonal-naive-28, the benchmark that
 
 | Horizon | WAPE | RMSSE | Bias |
 | --- | --- | --- | --- |
-| 7 days | 0.8509 | 0.7461 | -0.0542 |
-| 14 days | 0.8712 | 0.7905 | -0.0639 |
-| 28 days | 0.8737 | 0.8365 | -0.0738 |
+| 7 days | 0.7436 | 0.6848 | -0.0532 |
+| 14 days | 0.7397 | 0.7274 | -0.0527 |
+| 28 days | 0.7305 | 0.7606 | -0.0762 |
 
-**Prediction intervals.** Empirical P10-P90 bands covered 76.0% of held-out actuals against an 80% design target (11.6% fell below P10, 12.3% above P90, n=5,600).
+**Prediction intervals.** Empirical P10-P90 bands covered 79.6% of held-out actuals against an 80% design target (9.7% fell below P10, 10.7% above P90, n=853,624).
 
 ## Ablation: do FEMA and FRED actually help?
 
@@ -59,30 +59,29 @@ Mean across folds F1, F2, F3 at horizon 28, identical seed, parameters and rows 
 
 | Arm | Feature set | Features | WAPE | sd across folds | RMSSE | Bias |
 | --- | --- | --- | --- | --- | --- | --- |
-| A | Demand history only | 19 | 0.9125 | 0.0419 | 0.7254 | 0.0385 |
-| B | + Calendar & Price | 36 | 0.9067 | 0.0318 | 0.7192 | 0.0484 |
-| C | + FEMA disaster context | 43 | 0.9000 | 0.0319 | 0.7165 | 0.0357 |
-| D | + FRED economic context | 47 | 0.9104 | 0.0337 | 0.7219 | 0.0257 |
+| A | Demand history only | 19 | 0.7752 | 0.0078 | 0.7480 | -0.0581 |
+| B | + Calendar & Price | 36 | 0.7635 | 0.0087 | 0.7393 | -0.0437 |
+| C | + FEMA disaster context | 43 | 0.7632 | 0.0100 | 0.7390 | -0.0423 |
+| D | + FRED economic context | 47 | 0.7633 | 0.0100 | 0.7386 | -0.0348 |
 
-- **Calendar and price: improved accuracy.** WAPE fell 0.0058 (0.64% relative), better on 2 of 3 folds. This is smaller than the 0.0419 fold-to-fold spread, so it is a marginal gain, not a decisive one.
-- **FEMA disaster context: improved accuracy.** WAPE fell 0.0067 (0.74% relative), better on 3 of 3 folds. This is smaller than the 0.0318 fold-to-fold spread, so it is a marginal gain, not a decisive one.
-- **FRED economic context: did NOT improve accuracy.** WAPE rose 0.0104 (1.15% relative), better on only 0 of 3 folds.
+- **Calendar and price: improved accuracy.** WAPE fell 0.0117 (1.51% relative), better on 3 of 3 folds.
+- **FEMA disaster context: improved accuracy.** WAPE fell 0.0004 (0.05% relative), better on 1 of 3 folds. This is smaller than the 0.0087 fold-to-fold spread, so it is a marginal gain, not a decisive one.
+- **FRED economic context: did NOT improve accuracy.** WAPE rose 0.0001 (0.01% relative), better on only 1 of 3 folds.
 
-For perspective, FEMA features account for 0.06% of total model gain and FRED features 0.00%. Read the WAPE deltas above against those shares before concluding that external data improves point forecasts.
+For perspective, FEMA features account for 0.00% of total model gain and FRED features 0.00%. Read the WAPE deltas above against those shares before concluding that external data improves point forecasts.
 
 **Share of model gain by feature family**
 
 | Family | Share of gain |
 | --- | --- |
-| Demand history | 80.05% |
-| Product / Store identity | 15.47% |
-| Calendar & Events | 3.10% |
-| Price | 1.32% |
-| FEMA context | 0.06% |
+| Demand history | 87.79% |
+| Product / Store identity | 9.17% |
+| Calendar & Events | 1.87% |
+| Price | 1.17% |
 
-Top features by gain: `roll_mean_28`, `roll_mean_56`, `item_id`, `roll_mean_7`, `wday`, `days_since_last_sale`.
+Top features by gain: `roll_mean_56`, `roll_mean_28`, `item_id`, `roll_std_56`, `roll_mean_7`, `wday`.
 
-**Selection.** smallest feature set within 0.3% relative of the best mean WAPE at h=28. Selected feature set **C** (+ FEMA disaster context).
+**Selection.** smallest feature set within 0.3% relative of the best mean WAPE at h=28. Selected feature set **B** (+ Calendar & Price).
 
 **Objective check** (development mode, fold F1, arm B, then frozen):
 
@@ -94,45 +93,46 @@ Top features by gain: `roll_mean_28`, `roll_mean_56`, `item_id`, `roll_mean_7`, 
 
 ## Demand shock detection
 
-Scored window: **2016-02-01 to 2016-05-22** (112 days), covering 170 eligible series and 19,040 scored series-days. Residuals come from feature set B, which contains no FEMA or FRED features by design.
+Scored window: **2016-02-01 to 2016-05-22** (112 days), covering 21,900 eligible series and 2,452,463 scored series-days. Residuals come from feature set B, which contains no FEMA or FRED features by design.
 
-**417 episodes** were filed.
+**53,774 episodes** were filed.
 
 | Classification | Episodes | Median duration | Mean peak score |
 | --- | --- | --- | --- |
-| Volatility Shock | 164 | 4 days | 51.5 |
-| Demand Surge | 138 | 3 days | 55.9 |
-| Demand Collapse | 85 | 5 days | 56.3 |
-| Persistent Over-forecast | 23 | 7 days | 46.9 |
-| Regime Shift | 5 | 54 days | 78.1 |
-| Possible Regime Shift (window truncated) | 2 | 32 days | 70.1 |
+| Volatility Shock | 22095 | 3 days | 50.6 |
+| Demand Surge | 17523 | 3 days | 55.3 |
+| Demand Collapse | 11872 | 4 days | 51.9 |
+| Persistent Over-forecast | 1617 | 5 days | 48.1 |
+| Regime Shift | 389 | 35 days | 75.6 |
+| Possible Regime Shift (window truncated) | 209 | 33 days | 76.7 |
+| Persistent Under-forecast | 69 | 6 days | 53.2 |
 
 | Severity | Episodes |
 | --- | --- |
-| Critical | 1 |
-| Severe | 43 |
-| Elevated | 207 |
-| Watch | 166 |
+| Critical | 260 |
+| Severe | 3234 |
+| Elevated | 26805 |
+| Watch | 23475 |
 
-**0.0%** of episodes coincided with a FEMA declaration active in the same state. This is a coincidence rate measured over the scored window - it is not evidence of causation, and the platform never presents it as such.
+**13.8%** of episodes coincided with a FEMA declaration active in the same state. This is a coincidence rate measured over the scored window - it is not evidence of causation, and the platform never presents it as such.
 
 ## Business impact (measured, not assumed)
 
 | Quantity | Value |
 | --- | --- |
-| Series covered | 200 (200 eligible for planning arithmetic) |
-| Actual units sold in the holdout window | 8,684 |
-| Revenue represented at real M5 prices | $22,777 |
-| Under-forecast exposure | $11,817 |
-| Over-forecast exposure | $9,541 |
-| Total estimated revenue exposure | $21,358 |
+| Series covered | 30,490 (30,463 eligible for planning arithmetic) |
+| Actual units sold in the holdout window | 1,231,648 |
+| Revenue represented at real M5 prices | $3,900,555 |
+| Under-forecast exposure | $1,702,722 |
+| Over-forecast exposure | $1,381,154 |
+| Total estimated revenue exposure | $3,083,876 |
 
 Estimated revenue exposure dollarises forecast error using real M5 sell prices. It is **not** measured lost revenue: M5 records units sold, so demand that was never satisfied is unobservable in the source data. Safety stock, reorder points and days of cover are shown in the application only after a user supplies lead time and service level, because M5 contains no inventory records at all.
 
 ## Reproducing these numbers
 
 ```bash
-python scripts/run_pipeline.py --mode development
+python scripts/run_pipeline.py --mode full
 python scripts/export_results.py
 ```
 

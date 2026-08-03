@@ -132,7 +132,9 @@ with tab_perf:
                     fig.add_trace(go.Bar(x=block["horizon"].astype(str), y=block["wape"],
                                          name=f"{config}"))
                 fig.update_yaxes(title="WAPE", tickformat=".1%")
-                fig.update_xaxes(title="Horizon (days)")
+                # Categorical, else Plotly interpolates a "21" tick that is not a
+                # horizon this project evaluates.
+                fig.update_xaxes(title="Horizon (days)", type="category")
                 st.plotly_chart(sh.style_fig(fig, 300), width="stretch")
         with right:
             with st.container(border=True):

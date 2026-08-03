@@ -89,10 +89,8 @@ view_col, item_col = st.columns([1, 2])
 with view_col:
     view = st.radio("View", ["Aggregate of selection", "Single item"], horizontal=False)
 with item_col:
-    pairs = (selected_series["item_id"].astype(str) + "  @  "
-             + selected_series["store_id"].astype(str)).sort_values().tolist()
-    chosen_pair = st.selectbox("Item and store", pairs,
-                               disabled=(view != "Single item"))
+    chosen = sh.series_picker(selected_series, key="fc_series",
+                              disabled=(view != "Single item"))
 
 try:
     lgbm_fc = sh.load_forecasts(model="lgbm", config=selected_config, fold=fold)
@@ -104,8 +102,8 @@ if lgbm_fc.empty:
     st.stop()
 
 lgbm_fc = sh.apply_filters(lgbm_fc, ctx)
-if view == "Single item" and chosen_pair:
-    item_id, store_id = [p.strip() for p in chosen_pair.split("@")]
+if view == "Single item" and chosen:
+    item_id, store_id = chosen
     lgbm_fc = lgbm_fc[(lgbm_fc["item_id"].astype(str) == item_id)
                       & (lgbm_fc["store_id"].astype(str) == store_id)]
 
@@ -130,7 +128,7 @@ try:
     sales = sh.apply_filters(
         sales.merge(meta[["item_id", "store_id"]], on="item_id", how="left")
         if "store_id" not in sales.columns else sales, ctx)
-    if view == "Single item" and chosen_pair:
+    if view == "Single item" and chosen:
         sales = sales[(sales["item_id"].astype(str) == item_id)
                       & (sales["store_id"].astype(str) == store_id)]
     history = sales.groupby("d", as_index=False)["sales"].sum().sort_values("d")
@@ -190,7 +188,7 @@ if fold != "FORWARD":
                     fig.add_trace(go.Bar(x=sub["horizon"].astype(str), y=sub["wape"],
                                          name=sh.MODEL_LABELS.get(model, model)))
                 fig.update_yaxes(title="WAPE", tickformat=".0%")
-                fig.update_xaxes(title="Horizon (days)")
+                fig.update_xaxes(title="Horizon (days)", type="category")
                 st.plotly_chart(sh.style_fig(fig, 300), width="stretch")
                 st.caption("Seasonal naive (lag 28) shares the model's information "
                            "set exactly, which makes it the fair benchmark.")

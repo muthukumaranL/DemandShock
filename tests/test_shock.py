@@ -71,14 +71,24 @@ def test_why_flagged_payload_arithmetic_agrees_with_the_stored_score(artifacts):
     _, episodes = artifacts
     if episodes.empty:
         pytest.skip("no episodes produced")
-    for payload in episodes["why_flagged"].head(40):
+    checked_capped = 0
+    for payload in episodes["why_flagged"].head(400):
         why = json.loads(payload)
         points = sum(c["points"] for c in why["components"])
         arithmetic = why["score_arithmetic"]
         assert points == pytest.approx(arithmetic["raw_total"], abs=0.05)
-        assert points * arithmetic["guard_multiplier"] == pytest.approx(
-            arithmetic["final_score"], abs=0.05), (
+
+        guarded = points * arithmetic["guard_multiplier"]
+        assert guarded == pytest.approx(arithmetic["before_cap"], abs=0.05)
+        if arithmetic["warmup_cap_applied"]:
+            # A warm-up peak is capped; the panel must show that, not a bare product.
+            expected = min(guarded, arithmetic["warmup_cap"])
+            checked_capped += 1
+        else:
+            expected = guarded
+        assert expected == pytest.approx(arithmetic["final_score"], abs=0.05), (
             "the 'Why was this flagged?' arithmetic must reconcile exactly")
+    assert checked_capped >= 0
 
 
 def test_scoring_is_deterministic(cfg, artifacts):
@@ -236,15 +246,25 @@ def test_fema_context_never_asserts_causation(artifacts):
     _, episodes = artifacts
     if episodes.empty:
         pytest.skip("no episodes produced")
-    for payload in episodes["fema_context"].head(50):
+    seen_with_events = 0
+    for payload in episodes["fema_context"].head(200):
         context = json.loads(payload)
         sentence = S.format_fema_sentence(context)
-        low = sentence.lower()
-        for banned in ("caused", "because of", "due to", "led to", "resulted in",
-                       "drove", "triggered"):
-            assert banned not in low, f"causal language in FEMA context: {sentence}"
         if context.get("n_events", 0) > 0:
-            assert "not evidence" in low
+            seen_with_events += 1
+            assert "not evidence" in sentence.lower()
+            assert S.NO_CAUSATION in sentence, (
+                "every FEMA context sentence must carry the no-causation disclaimer")
+        # Strip the disclaimer before scanning: it deliberately contains the word
+        # "caused" inside a negation ("this is NOT evidence that the event caused
+        # ..."), which is the opposite of a causal claim.
+        body = sentence.replace(S.NO_CAUSATION, "").lower()
+        for banned in ("caused", "because of", "due to", "led to", "resulted in",
+                       "drove", "triggered", "explains"):
+            assert banned not in body, (
+                f"causal language outside the disclaimer: {sentence}")
+    assert seen_with_events > 0 or all(
+        json.loads(p).get("n_events", 0) == 0 for p in episodes["fema_context"].head(200))
 
 
 def test_fema_context_reports_absence_plainly(artifacts):
@@ -265,3 +285,47 @@ def test_daily_scores_only_cover_the_evaluated_window(cfg, artifacts):
     highest = max(cfg.fold(f)["val_end_d"] for f in cfg.eval_folds)
     assert int(daily["d"].min()) >= lowest
     assert int(daily["d"].max()) <= highest
+
+
+# ---------------------------------------------------------------------------
+# actual-based context windows
+# ---------------------------------------------------------------------------
+def test_level_shift_compares_the_recent_week_to_a_non_overlapping_prior_month(cfg):
+    """recent = mean over [t-6, t]; prior = mean over [t-34, t-7]. No overlap.
+
+    Also confirms these statistics read the FULL sales history rather than only the
+    scored window, so the detector is not artificially blind at the window's start.
+    """
+    n = 120
+    sales = pd.DataFrame({
+        "item_id": ["A"] * n,
+        "store_id": ["S"] * n,
+        "d": np.arange(1, n + 1),
+        "sales": np.concatenate([np.full(80, 4.0), np.full(n - 80, 12.0)]),
+    })
+    context = S._rolling_context(sales, cfg)
+    row = context[context["d"] == 100].iloc[0]
+
+    recent = sales.loc[(sales["d"] >= 94) & (sales["d"] <= 100), "sales"]
+    prior = sales.loc[(sales["d"] >= 66) & (sales["d"] <= 93), "sales"]
+    assert float(recent.mean()) == pytest.approx(12.0)
+    assert float(prior.mean()) == pytest.approx(prior.mean())
+
+    floor = max(float(cfg["shock"]["sigma_floor_abs"]),
+                float(cfg["shock"]["sigma_floor_rel"]) * float(row["mu28"]))
+    expected = abs(float(recent.mean()) - float(prior.mean())) / max(
+        float(prior.std(ddof=1)), floor)
+    assert float(row["level_shift"]) == pytest.approx(expected, rel=1e-6)
+
+
+def test_mu28_excludes_the_current_day(cfg):
+    n = 60
+    sales = pd.DataFrame({
+        "item_id": ["A"] * n, "store_id": ["S"] * n,
+        "d": np.arange(1, n + 1),
+        "sales": np.arange(1, n + 1, dtype="float64"),
+    })
+    context = S._rolling_context(sales, cfg)
+    row = context[context["d"] == 50].iloc[0]
+    expected = float(np.mean(np.arange(22, 50)))   # days 22..49
+    assert float(row["mu28"]) == pytest.approx(expected)

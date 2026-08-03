@@ -140,8 +140,10 @@ def user_input_badge() -> str:
 
 
 def style_fig(fig: go.Figure, height: int = 320, title: str | None = None) -> go.Figure:
-    fig.update_layout(template="demandshock", height=height,
-                      title=dict(text=title, font=dict(size=14)) if title else None)
+    fig.update_layout(template="demandshock", height=height)
+    # Passing title=None makes Plotly render the literal string "undefined" as the
+    # chart title, so set the text explicitly in both branches.
+    fig.update_layout(title=dict(text=title or "", font=dict(size=14)))
     return fig
 
 
@@ -357,10 +359,15 @@ def sidebar_context() -> dict[str, Any]:
             st.caption(f"Trained {metadata.get('trained_at', 'unknown')} - "
                        f"feature set {metadata.get('selected_config', '?')} - "
                        f"{metadata.get('n_features', '?')} features")
-            if metadata.get("config_hash") and metadata["config_hash"] != cfg.hash():
-                st.warning("Artifacts were built with a different config.yaml. "
-                           "Re-run the pipeline to refresh.",
-                           icon=":material/sync_problem:")
+            # Compare against the config as it would be for the artifacts' OWN mode:
+            # a full-mode artifact set is not "stale" merely because config.yaml
+            # currently defaults to development.
+            if metadata.get("config_hash"):
+                comparable = load_config(REPO_ROOT / "config.yaml", mode=mode).hash()
+                if metadata["config_hash"] != comparable:
+                    st.warning("config.yaml has changed since these artifacts were "
+                               "built. Re-run the pipeline to refresh them.",
+                               icon=":material/sync_problem:")
             if metadata.get("reduced_ablation_run"):
                 st.warning("Artifacts come from a reduced (smoke) ablation run and "
                            "must not be quoted as ablation results.",
@@ -415,6 +422,57 @@ def apply_filters(frame: pd.DataFrame, ctx: dict[str, Any]) -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 # formatting
 # ---------------------------------------------------------------------------
+MAX_PICKER_OPTIONS = 400
+
+
+@st.cache_data(show_spinner=False, max_entries=8)
+def _picker_options(pairs: tuple[tuple[str, str], ...]) -> list[str]:
+    """Cached so 30,490 option strings are not rebuilt on every rerun."""
+    return sorted(f"{item}  @  {store}" for item, store in pairs)
+
+
+def series_picker(frame: pd.DataFrame, label: str = "Item and store",
+                  key: str | None = None, disabled: bool = False) -> tuple[str, str] | None:
+    """Searchable item x store picker that stays usable at full-dataset scale.
+
+    A raw selectbox over 30,490 series is unusable, so the list is filtered by a
+    search box and capped, with the cap stated rather than silently applied.
+    """
+    if frame.empty:
+        st.caption("No series available for the current filters.")
+        return None
+    pairs = tuple(
+        frame[["item_id", "store_id"]].astype(str).drop_duplicates()
+        .itertuples(index=False, name=None))
+    options = _picker_options(pairs)
+    total = len(options)
+
+    if total > MAX_PICKER_OPTIONS:
+        query = st.text_input(
+            "Search items", key=f"{key}_search" if key else None,
+            placeholder="e.g. FOODS_3_090 or CA_1", disabled=disabled,
+            help="Type part of an item or store id to narrow the list.")
+        if query:
+            needle = query.strip().upper()
+            options = [o for o in options if needle in o.upper()]
+        shown = options[:MAX_PICKER_OPTIONS]
+        if len(options) > MAX_PICKER_OPTIONS:
+            st.caption(f"Showing the first {MAX_PICKER_OPTIONS:,} of "
+                       f"{len(options):,} matching series - refine the search to "
+                       f"reach the rest.")
+    else:
+        shown = options
+
+    if not shown:
+        st.caption("No series matches that search.")
+        return None
+    choice = st.selectbox(label, shown, key=key, disabled=disabled)
+    if not choice:
+        return None
+    item_id, store_id = [part.strip() for part in choice.split("@")]
+    return item_id, store_id
+
+
 def fmt_units(value: float) -> str:
     if value is None or pd.isna(value):
         return "-"

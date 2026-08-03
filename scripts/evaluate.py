@@ -63,10 +63,10 @@ def main() -> int:
     # the full history would cost 46M rows in full mode for no benefit.
     history_buffer = 90
     sales_from = int(residuals["d"].min()) - history_buffer
-    sales = D.read_sales_long(cfg, columns=["item_id", "d", "sales"])
-    sales = sales[sales["d"] >= sales_from]
+    sales = D.read_sales_long(cfg, columns=["item_id", "store_id", "d", "sales"])
+    sales = sales[sales["d"] >= sales_from].copy()
     sales["item_id"] = sales["item_id"].astype(str)
-    sales = sales.merge(meta[["item_id", "store_id"]], on="item_id", how="left")
+    sales["store_id"] = sales["store_id"].astype(str)
     sales["sales"] = sales["sales"].astype("float64")
     log.info("loaded %s actual item-days from d_%s for shock baselines",
              f"{len(sales):,}", sales_from)

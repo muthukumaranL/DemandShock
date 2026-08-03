@@ -33,6 +33,32 @@ METRIC_HELP = {
 # ---------------------------------------------------------------------------
 # scaling denominator for RMSSE
 # ---------------------------------------------------------------------------
+def naive_squared_diffs(sales: pd.DataFrame) -> pd.DataFrame:
+    """Squared one-step-naive errors per series, sorted once.
+
+    Split out from `rmsse_scales` so a multi-fold backtest sorts and differences
+    the full sales history a single time instead of once per fold.
+    """
+    ordered = sales.sort_values(["store_id", "item_id", "d"], kind="stable")
+    diffs = ordered.groupby(["store_id", "item_id"], observed=True)["sales"].diff()
+    return ordered.assign(sq=diffs.to_numpy() ** 2)[
+        ["item_id", "store_id", "d", "sq"]]
+
+
+def scales_from_diffs(diffs: pd.DataFrame, train_end_d: int) -> pd.DataFrame:
+    """Mean squared naive error up to `train_end_d`, per series."""
+    train = diffs[diffs["d"] <= train_end_d]
+    scales = (
+        train.groupby(["item_id", "store_id"], observed=True)["sq"]
+        .mean().reset_index().rename(columns={"sq": "scale"})
+    )
+    scales["scale"] = scales["scale"].astype("float64")
+    for col in ("item_id", "store_id"):
+        if isinstance(scales[col].dtype, pd.CategoricalDtype):
+            scales[col] = scales[col].astype(str)
+    return scales
+
+
 def rmsse_scales(sales: pd.DataFrame, train_end_d: int) -> pd.DataFrame:
     """Per-series mean squared one-step naive error over the training period.
 
@@ -41,15 +67,7 @@ def rmsse_scales(sales: pd.DataFrame, train_end_d: int) -> pd.DataFrame:
     all-zero series - have a scale of 0; RMSSE is undefined for them and they are
     excluded from RMSSE aggregates with the exclusion count reported.
     """
-    train = sales[sales["d"] <= train_end_d].sort_values(["item_id", "store_id", "d"])
-    diffs = train.groupby(["item_id", "store_id"], observed=True)["sales"].diff()
-    train = train.assign(sq=diffs.to_numpy() ** 2)
-    scales = (
-        train.groupby(["item_id", "store_id"], observed=True)["sq"]
-        .mean().reset_index().rename(columns={"sq": "scale"})
-    )
-    scales["scale"] = scales["scale"].astype("float64")
-    return scales
+    return scales_from_diffs(naive_squared_diffs(sales), train_end_d)
 
 
 # ---------------------------------------------------------------------------

@@ -84,10 +84,6 @@ def baseline_forecast(sales: pd.DataFrame, fold: FoldSpec, model: str) -> pd.Dat
     """
     origin = fold.train_end_d
     horizon = fold.horizon
-    history = sales[sales["d"] <= origin]
-    if history.empty:
-        return pd.DataFrame(columns=["item_id", "store_id", "d", "step", "y_pred"])
-
     steps = np.arange(1, horizon + 1)
     if model == "naive":
         offsets = np.zeros(horizon, dtype=int)
@@ -98,8 +94,13 @@ def baseline_forecast(sales: pd.DataFrame, fold: FoldSpec, model: str) -> pd.Dat
     else:
         raise ValueError(f"Unknown baseline model {model!r}")
 
+    # Select only the handful of source days the benchmark repeats. Every offset is
+    # non-positive, so these are all at or before the origin by construction - there
+    # is no need to materialise the whole pre-origin history first.
     needed = sorted({origin + int(o) for o in offsets})
-    source = history[history["d"].isin(needed)]
+    source = sales[sales["d"].isin(needed)]
+    if source.empty:
+        return pd.DataFrame(columns=["item_id", "store_id", "d", "step", "y_pred"])
     wide = source.pivot_table(index=["item_id", "store_id"], columns="d",
                               values="sales", observed=True)
     # A series may lack a needed day only if it was released after it; those days
@@ -107,12 +108,14 @@ def baseline_forecast(sales: pd.DataFrame, fold: FoldSpec, model: str) -> pd.Dat
     wide = wide.reindex(columns=needed)
 
     keys = wide.index.to_frame(index=False)
+    item_keys = keys["item_id"].astype(str).to_numpy()
+    store_keys = keys["store_id"].astype(str).to_numpy()
     parts = []
     for step, offset in zip(steps, offsets):
         column = origin + int(offset)
         parts.append(pd.DataFrame({
-            "item_id": keys["item_id"].to_numpy(),
-            "store_id": keys["store_id"].to_numpy(),
+            "item_id": item_keys,
+            "store_id": store_keys,
             "d": origin + int(step),
             "step": int(step),
             "y_pred": wide[column].to_numpy(dtype="float64"),

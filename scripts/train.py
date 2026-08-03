@@ -129,10 +129,12 @@ def main() -> int:
     meta = D.read_processed(cfg, "series_meta")
     meta["item_id"] = meta["item_id"].astype(str)
     meta["store_id"] = meta["store_id"].astype(str)
-    sales = D.read_sales_long(cfg, columns=["item_id", "d", "sales"])
-    sales["item_id"] = sales["item_id"].astype(str)
-    sales = sales.merge(meta[["item_id", "store_id"]], on="item_id", how="left")
+    # store_id comes free from the hive partition key, so no join against 46M rows.
+    # Ids stay categorical throughout: see read_sales_long for why that matters.
+    sales = D.read_sales_long(cfg, columns=["item_id", "store_id", "d", "sales"])
     sales["sales"] = sales["sales"].astype("float64")
+    log.info("loaded %s real item-days (%.2f GB in memory)", f"{len(sales):,}",
+             sales.memory_usage(deep=True).sum() / 1e9)
 
     if _forecast_dir(cfg).exists():
         shutil.rmtree(_forecast_dir(cfg))
@@ -144,15 +146,20 @@ def main() -> int:
     shock_residuals: list[pd.DataFrame] = []
     boosters: dict[tuple[str, str], FC.TrainedModel] = {}
 
+    naive_diffs = M.naive_squared_diffs(sales)
+
     def scales_for(fold: FC.FoldSpec) -> pd.DataFrame:
         if fold.name not in scales_cache:
-            scales_cache[fold.name] = M.rmsse_scales(sales, fold.train_end_d)
+            scales_cache[fold.name] = M.scales_from_diffs(naive_diffs, fold.train_end_d)
         return scales_cache[fold.name]
 
     # ---------------------------------------------------------------- baselines
     log.info("[1/6] naive benchmarks")
     for fold in FC.fold_specs(cfg, cfg.eval_folds):
-        actuals = sales[(sales["d"] >= fold.val_start_d) & (sales["d"] <= fold.val_end_d)]
+        actuals = sales[(sales["d"] >= fold.val_start_d)
+                        & (sales["d"] <= fold.val_end_d)].copy()
+        actuals["item_id"] = actuals["item_id"].astype(str)
+        actuals["store_id"] = actuals["store_id"].astype(str)
         for model in FC.BASELINE_MODELS:
             preds = FC.baseline_forecast(sales, fold, model)
             frame = preds.merge(
@@ -164,8 +171,9 @@ def main() -> int:
                                  model, "na", fold.name)
             if not block.empty:
                 all_metrics.append(block)
-        log.info("    %s: benchmarks scored on %s series",
-                 fold.name, f"{actuals['item_id'].nunique():,}")
+        n_series = len(actuals[["item_id", "store_id"]].drop_duplicates())
+        log.info("    %s: benchmarks scored on %s item-store series",
+                 fold.name, f"{n_series:,}")
 
     # ------------------------------------------------- objective spot-check
     objective_path = cfg.artifacts_dir / "objective_comparison.csv"

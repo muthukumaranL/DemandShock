@@ -668,8 +668,12 @@ def read_sales_long(cfg: Config, stores: list[str] | None = None,
         filt = ds.field("store_id").isin(stores)
     table = dataset.to_table(columns=columns, filter=filt)
     df = table.to_pandas()
-    if "store_id" in df.columns:
-        df["store_id"] = df["store_id"].astype("category")
+    # Categorical, not string. pandas 3 backs plain strings with PyArrow, and a
+    # boolean take over 46M Arrow strings tries to allocate several GB; dictionary
+    # codes make the same operation cheap.
+    for col in ("item_id", "store_id"):
+        if col in df.columns:
+            df[col] = df[col].astype("category")
     return df
 
 

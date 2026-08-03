@@ -91,10 +91,10 @@ if eligible.empty:
             "planning arithmetic.", icon=":material/info:")
     st.stop()
 
-pairs = (eligible["item_id"].astype(str) + "  @  "
-         + eligible["store_id"].astype(str)).sort_values().tolist()
-chosen = st.selectbox("Item and store", pairs)
-item_id, store_id = [p.strip() for p in chosen.split("@")]
+chosen = sh.series_picker(eligible, key="inv_series")
+if chosen is None:
+    st.stop()
+item_id, store_id = chosen
 row = eligible[(eligible["item_id"].astype(str) == item_id)
                & (eligible["store_id"].astype(str) == store_id)].iloc[0]
 

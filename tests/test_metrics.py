@@ -140,12 +140,18 @@ def test_wrmsse_is_never_claimed_anywhere_in_the_codebase():
     from pathlib import Path
 
     root = Path(__file__).resolve().parents[1]
+    disclaimers = ("never", "not implement", "banned", "does not", "deliberately not",
+                   "is not reported", "not claimed")
     offenders = []
     for path in list(root.glob("src/**/*.py")) + list(root.glob("app/**/*.py")) \
             + list(root.glob("api/**/*.py")) + list(root.glob("scripts/**/*.py")):
         text = path.read_text(encoding="utf-8").lower()
-        for line in text.splitlines():
-            if "wrmsse" in line and "never" not in line and "not implement" not in line \
-                    and "banned" not in line and "does not" not in line:
-                offenders.append(f"{path.name}: {line.strip()[:80]}")
+        start = 0
+        while (idx := text.find("wrmsse", start)) != -1:
+            # Look at the surrounding sentence, not just the physical line: the
+            # disclaimer often wraps across lines.
+            window = text[max(0, idx - 220): idx + 220]
+            if not any(phrase in window for phrase in disclaimers):
+                offenders.append(f"{path.name}: ...{text[idx - 60:idx + 60].strip()}...")
+            start = idx + 1
     assert not offenders, f"WRMSSE claimed without implementing it: {offenders}"

@@ -91,10 +91,17 @@ with st.container(horizontal=True):
               help=f"Reduction in WAPE against a seasonal-naive (lag-28) benchmark "
                    f"that uses the same information set. Benchmark WAPE {snaive_wape:.3f}.")
 
-if pd.notna(bias):
-    direction = "over-forecasting" if bias > 0 else "under-forecasting"
-    st.caption(f"Across the evaluated window the model is {direction} by "
-               f"{abs(bias) * 100:.1f}% of actual volume.")
+if pd.notna(bias) and pd.notna(accuracy):
+    direction = "over-forecast" if bias > 0 else "under-forecast"
+    st.caption(
+        f"**Read these two together.** Forecast accuracy is measured per item, per "
+        f"store, per day, where demand is intermittent - most series sell a handful "
+        f"of units on some days and none on others, so matching individual days "
+        f"exactly is inherently hard and {accuracy:.0f}% is a normal level at that "
+        f"granularity. Across the whole selection the 28-day **total** came within "
+        f"{abs(bias) * 100:.1f}% of actual demand ({direction}). The number that "
+        f"matters for a build-or-buy case is the "
+        f"{improvement:.0%} reduction in error against the seasonal-naive benchmark.")
 
 # ---------------------------------------------------------------- charts
 left, right = st.columns(2)

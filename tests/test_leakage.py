@@ -276,10 +276,15 @@ def test_snap_uses_the_stores_own_state(cfg, features):
 
 
 def test_no_pre_release_rows_survive(cfg, features, series_meta):
-    release = dict(zip(series_meta["item_id"].astype(str), series_meta["release_d"]))
+    # Keyed on (item, store): the same product has a different release date in
+    # each store, so an item-only lookup would compare against the wrong date.
+    release = {
+        (str(r.item_id), str(r.store_id)): int(r.release_d)
+        for r in series_meta.itertuples(index=False)
+    }
     warmup = int(cfg["features"]["warmup_days"])
-    items = features["item_id"].astype(str)
-    min_allowed = items.map(release).to_numpy() + warmup
+    keys = list(zip(features["item_id"].astype(str), features["store_id"].astype(str)))
+    min_allowed = np.array([release[k] for k in keys]) + warmup
     assert (features["d"].to_numpy() >= min_allowed).all(), (
         "feature rows exist before release + warm-up")
 

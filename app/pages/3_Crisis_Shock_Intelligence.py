@@ -24,7 +24,12 @@ cfg = ctx["cfg"]
 day_map = sh.calendar_map()
 
 episodes_all = sh.load("shock_episodes")
-daily_all = sh.load("shocks_daily")
+# Column pruning matters at full scale: the daily table holds millions of scored
+# item-days, and the page only needs these columns. The per-component breakdown is
+# already embedded in each episode's why_flagged payload.
+daily_all = sh.load("shocks_daily", columns=[
+    "item_id", "store_id", "d", "date", "score", "band",
+    "dept_id", "cat_id", "state_id", "y_true", "y_pred"])
 
 window_lo = day_map.get(int(daily_all["d"].min()))
 window_hi = day_map.get(int(daily_all["d"].max()))
@@ -113,8 +118,10 @@ with left:
                     annotation_text=f"{row.state_id}: {row.incidentType}",
                     annotation_position="top left",
                     annotation_font=dict(size=10, color=sh.AMBER))
+        TIMELINE_CAP = 3000
+        plotted = episodes.nlargest(TIMELINE_CAP, "peak_score")
         for band in sh.BAND_ORDER:
-            block = episodes[episodes["band"] == band]
+            block = plotted[plotted["band"] == band]
             if block.empty:
                 continue
             fig.add_trace(go.Scatter(
@@ -131,9 +138,14 @@ with left:
         fig.update_yaxes(title="Store")
         fig.update_xaxes(title="Episode start")
         st.plotly_chart(sh.style_fig(fig, 330), width="stretch")
-        st.caption("Marker size is episode duration. Shaded bands mark periods when "
+        caption = ("Marker size is episode duration. Shaded bands mark periods when "
                    "a FEMA declaration was active in a selected state - shown for "
                    "temporal context only.")
+        if len(episodes) > TIMELINE_CAP:
+            caption += (f" Plotting the {TIMELINE_CAP:,} highest-scoring of "
+                        f"{len(episodes):,} matching episodes to keep the chart "
+                        f"readable; all of them are counted in the metrics above.")
+        st.caption(caption)
 
 with right:
     with st.container(border=True):
@@ -165,13 +177,20 @@ with st.container(border=True):
 
 # ------------------------------------------------------------------ detail
 st.subheader("Why was this flagged?")
+EPISODE_CAP = 300
 episodes = episodes.sort_values("peak_score", ascending=False)
-labels = (episodes["item_id"].astype(str) + " @ " + episodes["store_id"].astype(str)
-          + "  -  " + episodes["start_date"].dt.strftime("%Y-%m-%d")
-          + "  (" + episodes["classification"] + ", peak "
-          + episodes["peak_score"].round(0).astype(int).astype(str) + ")")
-choice = st.selectbox("Episode", labels.tolist())
-episode = episodes.iloc[labels.tolist().index(choice)]
+shortlist = episodes.head(EPISODE_CAP).reset_index(drop=True)
+labels = (shortlist["item_id"].astype(str) + " @ " + shortlist["store_id"].astype(str)
+          + "  -  " + shortlist["start_date"].dt.strftime("%Y-%m-%d")
+          + "  (" + shortlist["classification"] + ", peak "
+          + shortlist["peak_score"].round(0).astype(int).astype(str) + ")")
+choice = st.selectbox("Episode", labels.tolist(),
+                      help="Ordered by peak score, most severe first.")
+if len(episodes) > EPISODE_CAP:
+    st.caption(f"Showing the {EPISODE_CAP} highest-scoring of {len(episodes):,} "
+               f"matching episodes. Narrow the severity, classification or sidebar "
+               f"filters to inspect others.")
+episode = shortlist.iloc[labels.tolist().index(choice)]
 why = json.loads(episode["why_flagged"])
 
 detail_left, detail_right = st.columns([3, 2])
@@ -205,10 +224,15 @@ with detail_left:
         fig.update_yaxes(autorange="reversed")
         st.plotly_chart(sh.style_fig(fig, 250), width="stretch")
         arithmetic = why["score_arithmetic"]
+        steps = (f"Components sum to {arithmetic['raw_total']:.1f}, multiplied by a "
+                 f"low-volume guard of {arithmetic['guard_multiplier']:.2f}")
+        if arithmetic.get("warmup_cap_applied"):
+            steps += (f" giving {arithmetic['before_cap']:.1f}, then capped at "
+                      f"{arithmetic['warmup_cap']:.0f} because the peak day fell in "
+                      f"the warm-up period")
+        steps += f", giving a final score of {arithmetic['final_score']:.1f}. "
         st.caption(
-            f"Components sum to {arithmetic['raw_total']:.1f}, multiplied by a "
-            f"low-volume guard of {arithmetic['guard_multiplier']:.2f}, giving a final "
-            f"score of {arithmetic['final_score']:.1f}. "
+            steps
             + ("The guard damped this score because the series sells at low volume; "
                "a small absolute change on a slow mover must not read as a crisis. "
                if arithmetic["guard_multiplier"] < 1 else "")
