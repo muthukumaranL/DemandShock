@@ -97,6 +97,11 @@ class ForecastPoint(BaseModel):
 class ForecastResponse(BaseModel):
     item_id: str
     store_id: str
+    product: str | None = Field(
+        default=None,
+        description="Measured description of the series (department, price band "
+                    "within its category, sales velocity). M5 anonymises product "
+                    "names, so this is derived from real attributes, not a name.")
     model: str
     config: str
     fold: str
@@ -108,6 +113,7 @@ class Episode(BaseModel):
     episode_id: str
     item_id: str
     store_id: str
+    product: str | None = None
     state_id: str | None
     start_date: date
     end_date: date
@@ -168,6 +174,7 @@ class InventoryRequest(BaseModel):
 class InventoryResponse(BaseModel):
     item_id: str
     store_id: str
+    product: str | None = None
     inputs_are_user_supplied: bool
     service_level: float
     service_level_defaulted: bool
@@ -202,6 +209,7 @@ REQUIRED = {
     "inventory_base": "artifacts/inventory_base.parquet",
     "forecasts": "artifacts/forecasts.parquet",
     "calendar": "data/processed/calendar.parquet",
+    "series_meta": "data/processed/series_meta.parquet",
 }
 
 
@@ -250,7 +258,32 @@ def day_to_date() -> dict[int, pd.Timestamp]:
     return dict(zip(cal["d"], cal["date"]))
 
 
+def product_labels() -> dict[tuple[str, str], str]:
+    """(item, store) -> measured descriptor.
+
+    M5 anonymises product identities, so instead of a name each series carries a
+    description derived from its own data: department, price band within its
+    category, and sales velocity. Returns an empty map for artifact sets built
+    before descriptors existed, so responses degrade to bare ids rather than fail.
+    """
+    try:
+        meta = load("series_meta")
+    except (KeyError, FileNotFoundError):
+        return {}
+    if "dept_label" not in meta.columns:
+        return {}
+    return {
+        (str(r.item_id), str(r.store_id)):
+            f"{r.dept_label} · {r.price_band} · {r.velocity}"
+            + (f" (${r.median_price:.2f})" if pd.notna(r.median_price) else "")
+        for r in meta.itertuples(index=False)
+    }
+
+
 LIMITATIONS = [
+    "M5 anonymises product identities: the source data contains no product names. "
+    "The 'product' field is a description measured from each series' own history "
+    "(department, price band within its category, sales velocity), not a name.",
     "M5 contains no inventory records; lead time, service level, on-hand units and "
     "unit cost are user-supplied operating assumptions.",
     "FEMA declarations are county-scoped while M5 discloses only a store's state, so "
@@ -340,7 +373,9 @@ def get_forecast(
             p10=round(float(row.p10), 4) if hasattr(row, "p10") and pd.notna(row.p10) else None,
             p90=round(float(row.p90), 4) if hasattr(row, "p90") and pd.notna(row.p90) else None))
     return ForecastResponse(
-        item_id=item_id, store_id=store_id, model=model, config=config, fold=fold,
+        item_id=item_id, store_id=store_id,
+        product=product_labels().get((item_id, store_id)),
+        model=model, config=config, fold=fold,
         has_actuals=any(p.y_true is not None for p in points), points=points)
 
 
@@ -370,10 +405,12 @@ def get_shocks(
     total_matching = int(len(frame))
     frame = frame.sort_values("peak_score", ascending=False).head(limit)
 
+    labels = product_labels()
     episodes = [
         Episode(
             episode_id=row.episode_id, item_id=str(row.item_id),
             store_id=str(row.store_id),
+            product=labels.get((str(row.item_id), str(row.store_id))),
             state_id=None if pd.isna(row.state_id) else str(row.state_id),
             start_date=pd.Timestamp(row.start_date).date(),
             end_date=pd.Timestamp(row.end_date).date(),
@@ -495,6 +532,7 @@ def inventory_analysis(request: InventoryRequest) -> InventoryResponse:
 
     return InventoryResponse(
         item_id=request.item_id, store_id=request.store_id,
+        product=product_labels().get((request.item_id, request.store_id)),
         inputs_are_user_supplied=not defaulted,
         service_level=float(result["service_level"]),
         service_level_defaulted=defaulted,

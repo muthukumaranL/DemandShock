@@ -354,6 +354,14 @@ demandshock/
 
 ## Known limitations
 
+- **M5 anonymises products.** The source data contains no product names — only codes
+  such as `FOODS_3_090`. Rather than invent names, each series is described by
+  attributes *measured from its own history*: its department, where its median price
+  sits within its category, and how fast it sells (e.g. **“Foods – Dept 3 · Value ·
+  Top seller ($1.38)”**). Ranks are taken within a category across all stores, so the
+  same item can be described differently in different stores — correct, since each
+  item-store pair is its own demand series. These are display labels only and are
+  never used as model features; `tests/test_labels.py` enforces both properties.
 - **No inventory data exists in M5.** Safety stock, reorder points and days of cover
   require operating assumptions the user supplies.
 - **FEMA is county-scoped; M5 gives only a store's state.** Disaster context is a

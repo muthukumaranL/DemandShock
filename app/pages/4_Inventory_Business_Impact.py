@@ -98,6 +98,9 @@ item_id, store_id = chosen
 row = eligible[(eligible["item_id"].astype(str) == item_id)
                & (eligible["store_id"].astype(str) == store_id)].iloc[0]
 
+st.caption(f"**{sh.describe_series(item_id, store_id, with_id=False)}** "
+           f"· {item_id} @ {store_id}")
+
 with st.container(horizontal=True):
     st.metric("Forecast demand (28d)", f"{row['total_forecast_28']:.1f} units",
               border=True)

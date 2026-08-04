@@ -297,6 +297,101 @@ def compute_series_meta(series: pd.DataFrame, prices: pd.DataFrame,
 # ---------------------------------------------------------------------------
 # sales melt
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# human-readable series descriptors
+# ---------------------------------------------------------------------------
+# M5 anonymises product identities: the source data contains no product names,
+# only codes such as FOODS_3_090. Rather than invent names - which would make the
+# platform's "real data only" claim false - each series is described by
+# attributes MEASURED from its own history: which department it belongs to, where
+# its price sits within its category, and how fast it sells. Every field below is
+# derived; none is supplied by hand.
+#
+# These are display labels only. They are never used as model features.
+
+VELOCITY_BANDS = [(0.90, "Top seller"), (0.70, "Fast mover"), (0.40, "Steady"),
+                  (0.15, "Slow mover"), (0.00, "Very slow")]
+PRICE_BANDS = [(0.80, "Premium"), (0.40, "Mid-price"), (0.00, "Value")]
+
+
+def _band(rank: float, bands: list[tuple[float, str]]) -> str:
+    for threshold, name in bands:
+        if rank >= threshold:
+            return name
+    return bands[-1][1]
+
+
+def _pretty_dept(dept_id: str) -> str:
+    """FOODS_3 -> 'Foods - Dept 3'. Derived from the real hierarchy, not a lookup."""
+    text = str(dept_id)
+    if "_" in text:
+        category, number = text.rsplit("_", 1)
+        if number.isdigit():
+            return f"{category.capitalize()} - Dept {number}"
+    return text.replace("_", " ").capitalize()
+
+
+def build_series_labels(series_meta: pd.DataFrame, sales: pd.DataFrame,
+                        prices: pd.DataFrame,
+                        report: ValidationReport | None = None) -> pd.DataFrame:
+    """Attach measured descriptors to every series.
+
+    Ranks are taken within the series' own category and ACROSS ALL STORES, so
+    "Top seller" means the top decile of that category chain-wide rather than of
+    the whole assortment - a slow-moving hobby item is not judged against a
+    grocery staple, but a small store's local best seller is not promoted either.
+    Consequently the same item can carry different descriptors in different
+    stores, which is correct: each item-store pair is its own demand series.
+    """
+    volume = (
+        sales.groupby(["item_id", "store_id"], observed=True)["sales"]
+        .agg(total_units="sum", mean_daily="mean",
+             zero_share=lambda s: float((s == 0).mean()))
+        .reset_index()
+    )
+    median_price = (
+        prices.groupby(["item_id", "store_id"], observed=True)["sell_price"]
+        .median().reset_index().rename(columns={"sell_price": "median_price"})
+    )
+
+    out = series_meta.copy()
+    for frame in (volume, median_price):
+        for col in ("item_id", "store_id"):
+            frame[col] = frame[col].astype(str)
+    out["item_id"] = out["item_id"].astype(str)
+    out["store_id"] = out["store_id"].astype(str)
+    before = len(out)
+    out = out.merge(volume, on=["item_id", "store_id"], how="left", validate="1:1")
+    out = out.merge(median_price, on=["item_id", "store_id"], how="left", validate="1:1")
+    assert len(out) == before, "label join changed the series count"
+
+    out["velocity_rank"] = out.groupby("cat_id", observed=True)["total_units"].rank(pct=True)
+    out["price_rank"] = out.groupby("cat_id", observed=True)["median_price"].rank(pct=True)
+    out["velocity"] = [_band(r, VELOCITY_BANDS) if pd.notna(r) else "Unranked"
+                       for r in out["velocity_rank"]]
+    out["price_band"] = [_band(r, PRICE_BANDS) if pd.notna(r) else "Unpriced"
+                         for r in out["price_rank"]]
+    out["dept_label"] = out["dept_id"].map(_pretty_dept)
+
+    for col, dtype in (("total_units", "int64"), ("mean_daily", "float32"),
+                       ("zero_share", "float32"), ("median_price", "float32"),
+                       ("velocity_rank", "float32"), ("price_rank", "float32")):
+        out[col] = out[col].astype(dtype)
+
+    if report is not None:
+        report.expect("labels.every_series_described",
+                      int(out["dept_label"].isna().sum()), 0)
+        report.note("labels.velocity_mix", out["velocity"].value_counts().to_dict(),
+                    "descriptors measured from each series' own sales history; "
+                    "ranked within its category")
+        report.note("labels.price_band_mix", out["price_band"].value_counts().to_dict())
+        report.note("labels.distinct_descriptions",
+                    int((out["dept_label"] + out["price_band"] + out["velocity"]).nunique()),
+                    "M5 contains no product names; these descriptors are derived "
+                    "from real measured attributes instead of invented")
+    return out
+
+
 def melt_sales(cfg: Config, series: pd.DataFrame, series_meta: pd.DataFrame,
                report: ValidationReport | None = None,
                logger=None) -> dict[str, int]:

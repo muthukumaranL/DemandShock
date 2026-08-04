@@ -192,10 +192,12 @@ st.subheader("Why was this flagged?")
 EPISODE_CAP = 300
 episodes = episodes.sort_values("peak_score", ascending=False)
 shortlist = episodes.head(EPISODE_CAP).reset_index(drop=True)
-labels = (shortlist["item_id"].astype(str) + " @ " + shortlist["store_id"].astype(str)
-          + "  -  " + shortlist["start_date"].dt.strftime("%Y-%m-%d")
-          + "  (" + shortlist["classification"] + ", peak "
-          + shortlist["peak_score"].round(0).astype(int).astype(str) + ")")
+_lookup = sh.label_lookup()
+labels = pd.Series([
+    f"{_lookup.get((str(r.item_id), str(r.store_id)), str(r.item_id))} @ {r.store_id}"
+    f"  -  {r.start_date:%Y-%m-%d}  ({r.classification}, peak {r.peak_score:.0f})"
+    for r in shortlist.itertuples(index=False)
+])
 choice = st.selectbox("Episode", labels.tolist(),
                       help="Ordered by peak score, most severe first.")
 if len(episodes) > EPISODE_CAP:
@@ -208,8 +210,9 @@ why = json.loads(episode["why_flagged"])
 detail_left, detail_right = st.columns([3, 2])
 with detail_left:
     with st.container(border=True):
-        st.markdown(f"**{episode['item_id']} at {episode['store_id']}** - "
-                    f"{episode['classification']}")
+        st.markdown(f"**{sh.describe_series(episode['item_id'], episode['store_id'], with_id=False)}** "
+                    f"- {episode['classification']}")
+        st.caption(f"{episode['item_id']} @ {episode['store_id']} · {sh.ANONYMITY_NOTE}")
         block = daily_all[(daily_all["item_id"] == episode["item_id"])
                           & (daily_all["store_id"] == episode["store_id"])].sort_values("d")
         fig = go.Figure()

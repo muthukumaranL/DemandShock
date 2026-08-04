@@ -168,7 +168,11 @@ with right:
             sh.missing_section("inventory_base", "Revenue exposure")
         else:
             top = inventory.nlargest(10, "exposure_total_usd")
-            label = top["item_id"].astype(str) + " @ " + top["store_id"].astype(str)
+            lookup = sh.label_lookup()
+            label = [
+                (lookup.get((str(i), str(s)), f"{i} @ {s}") + f"<br>{i} @ {s}")
+                for i, s in zip(top["item_id"], top["store_id"])
+            ]
             fig = go.Figure()
             fig.add_trace(go.Bar(y=label, x=top["under_exposure_usd"],
                                  name="Under-forecast", orientation="h",
@@ -233,12 +237,16 @@ with right:
 if not episodes.empty:
     with st.container(border=True):
         st.markdown("**Most severe demand shocks needing review**")
-        top = episodes.nlargest(10, "peak_score")[
+        top = sh.attach_labels(episodes.nlargest(10, "peak_score")[
             ["item_id", "store_id", "start_date", "end_date", "n_days",
-             "classification", "band", "peak_score", "fema_overlap"]]
+             "classification", "band", "peak_score", "fema_overlap"]])
         st.dataframe(
             top, hide_index=True, width="stretch",
             column_config={
+                "Product": st.column_config.TextColumn(
+                    "Product", width="medium",
+                    help="Measured description: department, price band within its "
+                         "category, and sales velocity. M5 anonymises product names."),
                 "peak_score": st.column_config.ProgressColumn(
                     "Score", min_value=0, max_value=100, format="%.0f"),
                 "start_date": st.column_config.DateColumn("Start"),

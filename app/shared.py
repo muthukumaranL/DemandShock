@@ -432,11 +432,73 @@ def apply_filters(frame: pd.DataFrame, ctx: dict[str, Any]) -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 MAX_PICKER_OPTIONS = 400
 
+ANONYMITY_NOTE = (
+    "The M5 source data anonymises product identities - it contains no product "
+    "names, only codes such as FOODS_3_090. Rather than invent names, each series "
+    "is described by attributes measured from its own history: its department, "
+    "where its price sits within its category, and how fast it sells."
+)
+
+
+@st.cache_data(show_spinner=False, max_entries=4)
+def _label_lookup(mtime: float) -> dict[tuple[str, str], str]:
+    """(item, store) -> measured descriptor, e.g. 'Foods - Dept 3 - Value - Top seller'."""
+    meta = load("series_meta")
+    if "dept_label" not in meta.columns:      # artifacts predate the descriptors
+        return {}
+    lookup = {}
+    for row in meta.itertuples(index=False):
+        price = f"  (${row.median_price:.2f})" if pd.notna(row.median_price) else ""
+        lookup[(str(row.item_id), str(row.store_id))] = (
+            f"{row.dept_label} · {row.price_band} · {row.velocity}{price}")
+    return lookup
+
+
+def label_lookup() -> dict[tuple[str, str], str]:
+    try:
+        return _label_lookup(_resolve("series_meta").stat().st_mtime)
+    except FileNotFoundError:
+        return {}
+
+
+def describe_series(item_id: str, store_id: str, with_id: bool = True) -> str:
+    """Readable description of one series, falling back to the raw ids."""
+    label = label_lookup().get((str(item_id), str(store_id)))
+    if not label:
+        return f"{item_id} @ {store_id}"
+    return f"{label}  —  {item_id} @ {store_id}" if with_id else label
+
+
+def attach_labels(frame: pd.DataFrame, column: str = "Product") -> pd.DataFrame:
+    """Add a descriptor column to any frame carrying item_id and store_id."""
+    if frame.empty or not {"item_id", "store_id"}.issubset(frame.columns):
+        return frame
+    lookup = label_lookup()
+    if not lookup:
+        return frame
+    out = frame.copy()
+    keys = list(zip(out["item_id"].astype(str), out["store_id"].astype(str)))
+    out.insert(0, column, [lookup.get(k, "") for k in keys])
+    return out
+
 
 @st.cache_data(show_spinner=False, max_entries=8)
-def _picker_options(pairs: tuple[tuple[str, str], ...]) -> list[str]:
-    """Cached so 30,490 option strings are not rebuilt on every rerun."""
-    return sorted(f"{item}  @  {store}" for item, store in pairs)
+def _picker_options(pairs: tuple[tuple[str, str], ...],
+                    lookup_version: float) -> tuple[list[str], dict[str, tuple[str, str]]]:
+    """Cached so 30,490 option strings are not rebuilt on every rerun.
+
+    Returns the display strings plus a reverse map, so the caller never has to
+    parse ids back out of a label that contains punctuation of its own.
+    """
+    lookup = label_lookup()
+    options, reverse = [], {}
+    for item, store in pairs:
+        label = lookup.get((item, store))
+        text = f"{label}  —  {item} @ {store}" if label else f"{item}  @  {store}"
+        options.append(text)
+        reverse[text] = (item, store)
+    options.sort()
+    return options, reverse
 
 
 def series_picker(frame: pd.DataFrame, label: str = "Item and store",
@@ -452,14 +514,18 @@ def series_picker(frame: pd.DataFrame, label: str = "Item and store",
     pairs = tuple(
         frame[["item_id", "store_id"]].astype(str).drop_duplicates()
         .itertuples(index=False, name=None))
-    options = _picker_options(pairs)
+    try:
+        version = _resolve("series_meta").stat().st_mtime
+    except FileNotFoundError:
+        version = 0.0
+    options, reverse = _picker_options(pairs, version)
     total = len(options)
 
     if total > MAX_PICKER_OPTIONS:
         query = st.text_input(
-            "Search items", key=f"{key}_search" if key else None,
-            placeholder="e.g. FOODS_3_090 or CA_1", disabled=disabled,
-            help="Type part of an item or store id to narrow the list.")
+            "Search products", key=f"{key}_search" if key else None,
+            placeholder="e.g. Top seller, Premium, FOODS_3_090 or CA_1", disabled=disabled,
+            help="Search the measured description or the item and store code.")
         if query:
             needle = query.strip().upper()
             options = [o for o in options if needle in o.upper()]
@@ -477,8 +543,9 @@ def series_picker(frame: pd.DataFrame, label: str = "Item and store",
     choice = st.selectbox(label, shown, key=key, disabled=disabled)
     if not choice:
         return None
-    item_id, store_id = [part.strip() for part in choice.split("@")]
-    return item_id, store_id
+    # Resolved through the reverse map rather than by splitting the label: the
+    # descriptor contains its own punctuation and must not be parsed.
+    return reverse.get(choice)
 
 
 def fmt_units(value: float) -> str:

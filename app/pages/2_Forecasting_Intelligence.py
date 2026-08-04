@@ -155,6 +155,9 @@ with st.container(border=True):
                              mode="lines",
                              line=dict(color=sh.AMBER, width=2, dash="dot")))
     fig.update_yaxes(title="Units")
+    if view == "Single item" and chosen:
+        st.markdown(f"**{sh.describe_series(item_id, store_id, with_id=False)}**")
+        st.caption(f"{item_id} @ {store_id} · {sh.ANONYMITY_NOTE}")
     st.plotly_chart(sh.style_fig(fig, 360), width="stretch")
     caption = "Grey is observed history before the window. "
     if "p10" in path.columns:

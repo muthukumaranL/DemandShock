@@ -68,6 +68,16 @@ def main() -> int:
     log.info("      %s rows written (%s dropped as pre-release)",
              f"{stats['rows_written']:,}", f"{stats['rows_dropped']:,}")
 
+    # --- measured series descriptors --------------------------------------
+    # M5 ships no product names, so each series is described by attributes read
+    # from its own history rather than by an invented label.
+    sales_for_labels = D.read_sales_long(cfg, columns=["item_id", "store_id", "sales"])
+    series_meta = D.build_series_labels(series_meta, sales_for_labels, prices, report)
+    series_meta.to_parquet(cfg.processed_dir / "series_meta.parquet", index=False)
+    del sales_for_labels
+    log.info("      described %s series by department, price band and sales velocity",
+             f"{len(series_meta):,}")
+
     # --- FEMA -------------------------------------------------------------
     log.info("[5/7] FEMA declarations -> state-day tables")
     disasters = D.load_fema_disasters(cfg, calendar, report)
