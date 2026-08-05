@@ -1,0 +1,365 @@
+{
+ "meta": {
+  "mode": "full",
+  "trained_at": "2026-08-05T00:19:03+00:00",
+  "selected_config": "B",
+  "selected_config_label": "+ Calendar & Price",
+  "shock_config": "B",
+  "objective": "tweedie",
+  "n_features": 36,
+  "series_count": 30490,
+  "train_window_days": 730,
+  "config_hash": "f87039f3db9b",
+  "strategy": "direct multi-horizon; every feature frozen at the forecast origin (target date minus 28 days)"
+ },
+ "buckets": [
+  {
+   "name": "H1",
+   "min": 1,
+   "max": 7,
+   "shift": 7
+  },
+  {
+   "name": "H2",
+   "min": 8,
+   "max": 14,
+   "shift": 14
+  },
+  {
+   "name": "H3",
+   "min": 15,
+   "max": 28,
+   "shift": 28
+  }
+ ],
+ "versions": {
+  "python": "3.14.4",
+  "pandas": "3.0.2",
+  "numpy": "2.4.4",
+  "lightgbm": "4.6.0",
+  "pyarrow": "23.0.1",
+  "scipy": "1.17.1",
+  "scikit-learn": "1.8.0"
+ },
+ "coverage": {
+  "coverage": 0.7944200256787531,
+  "below": 0.09735551015435367,
+  "above": 0.10822446416689316,
+  "n": 853624
+ },
+ "folds": {
+  "F1": {
+   "train_end_d": 1829,
+   "val_start_d": 1830,
+   "val_end_d": 1857,
+   "val_start_date": "2016-02-01",
+   "val_end_date": "2016-02-28"
+  },
+  "F2": {
+   "train_end_d": 1857,
+   "val_start_d": 1858,
+   "val_end_d": 1885,
+   "val_start_date": "2016-02-29",
+   "val_end_date": "2016-03-27"
+  },
+  "F3": {
+   "train_end_d": 1885,
+   "val_start_d": 1886,
+   "val_end_d": 1913,
+   "val_start_date": "2016-03-28",
+   "val_end_date": "2016-04-24"
+  },
+  "HOLDOUT": {
+   "train_end_d": 1913,
+   "val_start_d": 1914,
+   "val_end_d": 1941,
+   "val_start_date": "2016-04-25",
+   "val_end_date": "2016-05-22"
+  },
+  "FORWARD": {
+   "train_end_d": 1941,
+   "val_start_d": 1942,
+   "val_end_d": 1969,
+   "val_start_date": "2016-05-23",
+   "val_end_date": "2016-06-19"
+  }
+ },
+ "train_rows_deploy": 21561935,
+ "dq": {
+  "mode": "full",
+  "series": 30490,
+  "items": 3049,
+  "stores": 10,
+  "departments": 7,
+  "categories": 3,
+  "states": 3,
+  "calendar_days": 1969,
+  "date_start": "2011-01-29",
+  "date_end": "2016-06-19",
+  "sales_rows": 46881677,
+  "price_rows": 6841121,
+  "fema_disasters": 116,
+  "fred_months": 1818,
+  "zero_demand_ratio": 0.596
+ },
+ "dq_counts": {
+  "pass": 63,
+  "warn": 0,
+  "fail": 0,
+  "total": 63
+ },
+ "models": {
+  "naive": {
+   "wape": 0.9516,
+   "rmsse": 1.0017,
+   "mae": 1.373,
+   "rmse": 2.8936,
+   "bias": 0.1319,
+   "smape": 85.7
+  },
+  "snaive7": {
+   "wape": 0.8622,
+   "rmsse": 0.9976,
+   "mae": 1.244,
+   "rmse": 2.6769,
+   "bias": -0.0736,
+   "smape": 83.1
+  },
+  "snaive28": {
+   "wape": 0.89,
+   "rmsse": 1.0338,
+   "mae": 1.284,
+   "rmse": 2.8292,
+   "bias": -0.0391,
+   "smape": 84.0
+  },
+  "lgbm": {
+   "wape": 0.7198,
+   "rmsse": 0.755,
+   "mae": 1.0385,
+   "rmse": 2.1493,
+   "bias": -0.0655,
+   "smape": 139.8
+  }
+ },
+ "by_horizon": {
+  "7": {
+   "wape": 0.7142,
+   "rmsse": 0.6707,
+   "bias": -0.0259
+  },
+  "14": {
+   "wape": 0.7176,
+   "rmsse": 0.7162,
+   "bias": -0.0308
+  },
+  "28": {
+   "wape": 0.7198,
+   "rmsse": 0.755,
+   "bias": -0.0655
+  }
+ },
+ "per_step": {
+  "s1_7": 0.7226,
+  "s8_14": 0.7233,
+  "s15_28": 0.7274
+ },
+ "per_step_before": {
+  "s1_7": 0.7519,
+  "s8_14": 0.7385,
+  "s15_28": 0.7274,
+  "all": 0.7305,
+  "rmsse": 0.7606
+ },
+ "grain": {
+  "daily": 0.7198,
+  "weekly": 0.3683,
+  "total": 0.0684
+ },
+ "velocity": {
+  "Fast mover": {
+   "wape": 0.707,
+   "mean_daily": 1.89,
+   "share_units": 0.2627
+  },
+  "Slow mover": {
+   "wape": 1.158,
+   "mean_daily": 0.49,
+   "share_units": 0.0848
+  },
+  "Steady": {
+   "wape": 0.93,
+   "mean_daily": 0.89,
+   "share_units": 0.1857
+  },
+  "Top seller": {
+   "wape": 0.511,
+   "mean_daily": 6.32,
+   "share_units": 0.4382
+  },
+  "Very slow": {
+   "wape": 1.365,
+   "mean_daily": 0.28,
+   "share_units": 0.0286
+  }
+ },
+ "interval_inside": 0.7944,
+ "ablation": {
+  "A": {
+   "wape": 0.7591,
+   "sd": 0.0076,
+   "rmsse": 0.739,
+   "bias": -0.0492,
+   "nf": 19
+  },
+  "B": {
+   "wape": 0.7472,
+   "sd": 0.0088,
+   "rmsse": 0.7303,
+   "bias": -0.03,
+   "nf": 36
+  },
+  "C": {
+   "wape": 0.747,
+   "sd": 0.0096,
+   "rmsse": 0.7301,
+   "bias": -0.0299,
+   "nf": 43
+  },
+  "D": {
+   "wape": 0.7473,
+   "sd": 0.0093,
+   "rmsse": 0.7298,
+   "bias": -0.0225,
+   "nf": 47
+  }
+ },
+ "ablation_before": {
+  "A": 0.7752,
+  "B": 0.7635,
+  "C": 0.7632,
+  "D": 0.7633
+ },
+ "abl_folds": {
+  "A": {
+   "F1": 0.7657,
+   "F2": 0.7607,
+   "F3": 0.7508
+  },
+  "B": {
+   "F1": 0.7516,
+   "F2": 0.7529,
+   "F3": 0.7371
+  },
+  "C": {
+   "F1": 0.7519,
+   "F2": 0.7532,
+   "F3": 0.7359
+  },
+  "D": {
+   "F1": 0.7532,
+   "F2": 0.7521,
+   "F3": 0.7366
+  }
+ },
+ "family_share": {
+  "demand": 0.8779,
+  "static": 0.0917,
+  "calendar": 0.0187,
+  "price": 0.0117
+ },
+ "top_features": [
+  {
+   "feature": "roll_mean_56",
+   "family": "demand",
+   "gain": 274698269.0
+  },
+  {
+   "feature": "roll_mean_28",
+   "family": "demand",
+   "gain": 41255072.0
+  },
+  {
+   "feature": "item_id",
+   "family": "static",
+   "gain": 31901590.0
+  },
+  {
+   "feature": "roll_std_56",
+   "family": "demand",
+   "gain": 17709454.0
+  },
+  {
+   "feature": "roll_mean_7",
+   "family": "demand",
+   "gain": 8590702.0
+  },
+  {
+   "feature": "wday",
+   "family": "calendar",
+   "gain": 3150204.0
+  },
+  {
+   "feature": "price_momentum_4wk",
+   "family": "price",
+   "gain": 2285184.0
+  },
+  {
+   "feature": "dept_id",
+   "family": "static",
+   "gain": 2283472.0
+  }
+ ],
+ "shocks": {
+  "episodes": 52922,
+  "eligible_series": 21900,
+  "scored_days": 2452463,
+  "by_class": {
+   "Volatility Shock": 23175,
+   "Demand Surge": 15454,
+   "Demand Collapse": 12153,
+   "Persistent Over-forecast": 1548,
+   "Regime Shift": 417,
+   "Possible Regime Shift (window truncated)": 127,
+   "Persistent Under-forecast": 48
+  },
+  "by_band": {
+   "Elevated": 26286,
+   "Watch": 23405,
+   "Severe": 2976,
+   "Critical": 255
+  },
+  "fema_overlap": 0.1364,
+  "median_days": 4.0,
+  "max_score": 91.7
+ },
+ "inventory": {
+  "series": 30490,
+  "eligible": 30463,
+  "under": 1656859.3314351426,
+  "over": 1389922.0560912811,
+  "revenue": 3900554.9040682316,
+  "actual_units": 1231648.0,
+  "forecast_units": 1150979.0464595961
+ },
+ "labels": {
+  "velocity_mix": {
+   "Steady": 9144,
+   "Slow mover": 7630,
+   "Fast mover": 6101,
+   "Very slow": 4564,
+   "Top seller": 3051
+  },
+  "price_mix": {
+   "Mid-price": 12242,
+   "Value": 12150,
+   "Premium": 6098
+  },
+  "example": "Foods - Dept 3 | Value | Top seller in Foods | 130.8/day ($1.38)"
+ },
+ "tests": 135,
+ "best_iter": {
+  "holdout": 254,
+  "deploy": 254
+ }
+}
