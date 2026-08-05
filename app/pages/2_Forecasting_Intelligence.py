@@ -198,6 +198,29 @@ with st.container(border=True):
         caption += "This window has no actuals - it is a genuine forward forecast."
     st.caption(caption)
 
+    # On an intermittent series the dotted line will never touch the spikes, and
+    # that is not a defect: the forecast is an expected value, and the band is the
+    # range being predicted. Say so where the reader would otherwise conclude the
+    # model is simply wrong.
+    if grain == "Daily" and view == "Single item" and chosen \
+            and path["y_pred"].mean() < 5:
+        inside = None
+        if {"p10", "p90", "y_true"}.issubset(path.columns) and path["y_true"].notna().any():
+            inside = float(((path["y_true"] >= path["p10"])
+                            & (path["y_true"] <= path["p90"])).mean())
+        st.info(
+            "**Reading a low-volume item.** The forecast line is an *expected value* "
+            f"of about {path['y_pred'].mean():.1f} units a day, not a prediction that "
+            "a given day will sell exactly that. A product that sells a few units a "
+            "week has no pattern saying *which* day the sale lands, so the dotted "
+            "line will never sit on the spikes — the shaded band is the range being "
+            "predicted."
+            + (f" Here **{inside:.0%} of actual days fell inside the band**."
+               if inside is not None else "")
+            + " Switch the grain to **Weekly total** or **Cumulative** to see whether "
+              "the forecast is right at the level you would actually order on.",
+            icon=":material/insights:")
+
 # ------------------------------------------------------------------ comparisons
 if fold != "FORWARD":
     left, right = st.columns(2)

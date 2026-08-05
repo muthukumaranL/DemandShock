@@ -256,3 +256,35 @@ def test_pages_degrade_gracefully_when_artifacts_are_absent(tmp_path, monkeypatc
         assert not app.exception, (
             f"{page} raised a traceback with no artifacts instead of showing guidance: "
             f"{[str(e.value)[:200] for e in app.exception]}")
+
+
+def test_forecast_loader_preserves_prediction_intervals(cfg, built):
+    """Regression: the P10-P90 band silently vanished from every chart.
+
+    Backtest folds carry no interval columns while the holdout does. PyArrow infers
+    a dataset's schema from its FIRST fragment, so reading the partitioned forecast
+    store dropped p10/p50/p90 everywhere - the band never rendered and nothing
+    failed. The loader must unify schemas across fragments.
+    """
+    if not built:
+        pytest.skip("artifacts not built")
+    import sys
+    sys.path.insert(0, str(REPO_ROOT / "app"))
+    import shared as sh
+
+    md = json.loads((cfg.artifacts_dir / "model_metadata.json").read_text("utf-8"))
+    selected = md["selected_config"]
+
+    holdout = sh.load_forecasts(model="lgbm", config=selected, fold="HOLDOUT")
+    assert not holdout.empty
+    for col in ("p10", "p90"):
+        assert col in holdout.columns, (
+            f"{col} missing from the holdout slice - the interval band cannot render")
+        assert holdout[col].notna().all(), f"{col} came back null"
+    assert (holdout["p10"] <= holdout["p90"]).all()
+
+    # A fold that genuinely has no intervals must not gain phantom all-null ones.
+    fold_one = sh.load_forecasts(model="lgbm", config=selected, fold="F1")
+    if not fold_one.empty:
+        assert "p10" not in fold_one.columns, (
+            "folds without intervals should drop the column, not carry it as nulls")

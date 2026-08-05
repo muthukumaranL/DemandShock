@@ -15,6 +15,7 @@ from typing import Any
 import pandas as pd
 import plotly.graph_objects as go
 import plotly.io as pio
+import pyarrow as pa
 import streamlit as st
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -227,7 +228,21 @@ def _read_forecasts(root: str, mtime: float, model: str | None, config: str | No
                     fold: str | None) -> pd.DataFrame:
     import pyarrow.dataset as ds
 
+    # Unify the schema across fragments before reading. PyArrow otherwise infers it
+    # from the FIRST fragment, and the backtest folds carry no p10/p50/p90 - only
+    # the holdout and forward windows do. Inferring from one fragment therefore
+    # dropped the prediction-interval columns from every read, so the P10-P90 band
+    # silently never rendered.
     dataset = ds.dataset(root, format="parquet", partitioning="hive")
+    try:
+        unified = pa.unify_schemas(
+            [f.physical_schema for f in dataset.get_fragments()]
+            + [dataset.partitioning.schema],
+            promote_options="permissive")   # baselines write `d` wider than the model
+        dataset = ds.dataset(root, format="parquet", partitioning="hive", schema=unified)
+    except Exception:                       # unmergeable schemas: fall back to inference
+        pass
+
     filt = None
     for field, value in (("model", model), ("config", config), ("fold_id", fold)):
         if value is None:
@@ -235,6 +250,11 @@ def _read_forecasts(root: str, mtime: float, model: str | None, config: str | No
         clause = ds.field(field) == value
         filt = clause if filt is None else (filt & clause)
     frame = dataset.to_table(filter=filt).to_pandas()
+    # Folds without intervals come back as all-NaN; drop the columns so callers
+    # test presence rather than having to test for emptiness.
+    for col in ("p10", "p50", "p90"):
+        if col in frame.columns and frame[col].isna().all():
+            frame = frame.drop(columns=[col])
     return frame
 
 
@@ -447,10 +467,17 @@ def _label_lookup(mtime: float) -> dict[tuple[str, str], str]:
     if "dept_label" not in meta.columns:      # artifacts predate the descriptors
         return {}
     lookup = {}
+    has_rate = "mean_daily" in meta.columns
     for row in meta.itertuples(index=False):
         price = f"  (${row.median_price:.2f})" if pd.notna(row.median_price) else ""
+        # Velocity is ranked WITHIN a category, so "Fast mover" means fast for its
+        # own category - a hobbies fast mover sells a fraction of a foods one. The
+        # absolute rate is shown alongside so the label cannot be misread as volume.
+        rate = (f" · {row.mean_daily:.1f}/day"
+                if has_rate and pd.notna(row.mean_daily) else "")
         lookup[(str(row.item_id), str(row.store_id))] = (
-            f"{row.dept_label} · {row.price_band} · {row.velocity}{price}")
+            f"{row.dept_label} · {row.price_band} · {row.velocity} in "
+            f"{str(row.cat_id).capitalize()}{rate}{price}")
     return lookup
 
 
