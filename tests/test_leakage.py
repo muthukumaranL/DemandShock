@@ -18,6 +18,79 @@ from demandshock import features as F
 # ---------------------------------------------------------------------------
 # the core invariant
 # ---------------------------------------------------------------------------
+def test_every_bucket_shift_covers_its_own_last_step(cfg):
+    """The rule that makes horizon bucketing safe.
+
+    A model serving steps 1..M is issued at origin O, so its newest legal input is
+    y[O]. At the last step the target is t = O + M and the feature reaches back to
+    y[t - shift] = y[O + M - shift]. That is at or before the origin only when
+    shift >= M. A bucket whose shift is smaller than its own last step would read
+    days that had not happened when the forecast was made.
+    """
+    buckets = cfg.horizon_buckets
+    assert buckets, "at least one horizon bucket must be configured"
+    for bucket in buckets:
+        assert int(bucket["shift"]) >= int(bucket["max_step"]), (
+            f"bucket {bucket['name']} uses shift {bucket['shift']} for steps up to "
+            f"{bucket['max_step']} - it would see {int(bucket['max_step']) - int(bucket['shift'])} "
+            "day(s) past the forecast origin")
+
+    covered = sorted(s for b in buckets
+                     for s in range(int(b["min_step"]), int(b["max_step"]) + 1))
+    assert covered == list(range(1, int(cfg["horizon"]) + 1)), (
+        "buckets must tile steps 1..horizon exactly once, with no gap or overlap")
+
+
+@pytest.mark.parametrize("shift", [7, 14, 28])
+def test_bucket_features_ignore_everything_after_their_own_origin(cfg, real_series_frame, shift):
+    """Per-bucket restatement of the core invariant.
+
+    For a table built at shift S, perturbing actuals inside (t-S, t] must leave
+    every demand feature at t unchanged - that window is the future as far as this
+    bucket's forecast origin is concerned.
+    """
+    original = int(cfg["features"]["demand_shift"])
+    cfg.raw["features"]["demand_shift"] = shift
+    try:
+        base = F._demand_features(real_series_frame.copy(), cfg)
+        feature_cols = [c for c in F.DEMAND_FEATURES if c in base.columns]
+
+        tested = 0
+        for t in (1500, 1700, 1900):
+            row = base.index[base["d"] == t]
+            if len(row) == 0:
+                continue
+            polluted = real_series_frame.copy()
+            recent = (polluted["d"] > t - shift) & (polluted["d"] <= t)
+            assert recent.sum() == shift, "expected exactly `shift` recent days"
+            polluted.loc[recent, "sales"] = polluted.loc[recent, "sales"] + 999.0
+            polluted = F._demand_features(polluted, cfg)
+
+            left = base.loc[row, feature_cols].to_numpy(dtype="float64")
+            right = polluted.loc[row, feature_cols].to_numpy(dtype="float64")
+            np.testing.assert_array_equal(
+                np.nan_to_num(left, nan=-12345.0), np.nan_to_num(right, nan=-12345.0),
+                err_msg=f"a feature at d={t} moved when the last {shift} days changed")
+            tested += 1
+        assert tested >= 2
+
+        # Control: day t-shift IS visible to this bucket, so it must move features.
+        t = 1700
+        polluted = real_series_frame.copy()
+        polluted.loc[polluted["d"] == t - shift, "sales"] += 999.0
+        polluted = F._demand_features(polluted, cfg)
+        row = base.index[base["d"] == t]
+        moved = any(
+            float(base.loc[row, c].iloc[0]) != float(polluted.loc[row, c].iloc[0])
+            for c in feature_cols
+            if pd.notna(base.loc[row, c].iloc[0]))
+        assert moved, (
+            f"shift={shift}: nothing changed when day t-{shift} moved, so the "
+            "invariance test above proves nothing")
+    finally:
+        cfg.raw["features"]["demand_shift"] = original
+
+
 def test_demand_features_ignore_everything_after_the_origin(cfg, real_series_frame):
     """Perturbing actuals inside (t-28, t] must not move ANY feature at row t.
 

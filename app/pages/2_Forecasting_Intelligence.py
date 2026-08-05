@@ -120,6 +120,17 @@ for band in ("p10", "p90"):
 path = lgbm_fc.groupby("d", as_index=False).agg(agg_cols).sort_values("d")
 path["date"] = path["d"].map(day_map)
 
+# Daily item-level demand is spiky and mostly zero, so a daily chart of one slow
+# mover looks like a miss even when the forecast is the best available estimate.
+# Weekly and cumulative views show the same forecast at the granularity a planner
+# actually orders on.
+grain = st.radio(
+    "Chart grain", ["Daily", "Weekly total", "Cumulative"], horizontal=True,
+    help="Daily is the raw series. Weekly totals and the cumulative curve show "
+         "whether the forecast is right in aggregate, which is what replenishment "
+         "depends on - a forecast of 0.7 units/day cannot match a day that sells "
+         "0 or 3, but can still be right across the week.")
+
 history_days = 56
 first_day = int(path["d"].min())
 try:
@@ -135,6 +146,21 @@ try:
     history["date"] = history["d"].map(day_map)
 except FileNotFoundError:
     history = pd.DataFrame()
+
+value_cols = [c for c in ("y_true", "y_pred", "p10", "p90") if c in path.columns]
+if grain == "Weekly total":
+    path = (path.assign(bucket=((path["d"] - path["d"].min()) // 7))
+            .groupby("bucket", as_index=False)
+            .agg({**{c: "sum" for c in value_cols}, "date": "last"}))
+    if not history.empty:
+        history = (history.assign(bucket=((history["d"] - history["d"].min()) // 7))
+                   .groupby("bucket", as_index=False)
+                   .agg({"sales": "sum", "date": "last"}))
+elif grain == "Cumulative":
+    path = path.sort_values("date").copy()
+    for col in value_cols:
+        path[col] = path[col].cumsum()
+    history = pd.DataFrame()      # a cumulative history would dwarf the window
 
 with st.container(border=True):
     fig = go.Figure()
@@ -154,7 +180,9 @@ with st.container(border=True):
     fig.add_trace(go.Scatter(x=path["date"], y=path["y_pred"], name="Forecast",
                              mode="lines",
                              line=dict(color=sh.AMBER, width=2, dash="dot")))
-    fig.update_yaxes(title="Units")
+    fig.update_yaxes(title={"Daily": "Units per day",
+                            "Weekly total": "Units per week",
+                            "Cumulative": "Cumulative units"}[grain])
     if view == "Single item" and chosen:
         st.markdown(f"**{sh.describe_series(item_id, store_id, with_id=False)}**")
         st.caption(f"{item_id} @ {store_id} · {sh.ANONYMITY_NOTE}")

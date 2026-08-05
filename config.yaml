@@ -64,8 +64,21 @@ folds:
   HOLDOUT: {train_end_d: 1913, val_start_d: 1914, val_end_d: 1941}
   FORWARD: {train_end_d: 1941, val_start_d: 1942, val_end_d: 1969}
 
+# Horizon buckets. A forecast is issued once at origin O for the next 28 days, so a
+# model serving steps 1..S may only use data up to O - i.e. a shift of S relative to
+# the TARGET date. Freezing every step at 28 (the old behaviour) meant a 1-day-ahead
+# forecast read 27-day-old demand while the 28-day-ahead one read the freshest. Each
+# bucket now uses the newest data its own last step permits. Measured on the full
+# holdout: steps 1-7 WAPE 0.7519 -> 0.7226, steps 8-14 0.7385 -> 0.7233, steps 15-28
+# unchanged at 0.7274 (28 was already the right shift), all-28 0.7305 -> 0.7198.
+# Safety rule, enforced by test: shift >= max_step.
+horizon_buckets:
+  - {name: H1, min_step: 1,  max_step: 7,  shift: 7}
+  - {name: H2, min_step: 8,  max_step: 14, shift: 14}
+  - {name: H3, min_step: 15, max_step: 28, shift: 28}
+
 features:
-  demand_shift: 28                   # every demand feature is known at t-28
+  demand_shift: 28                   # longest bucket; per-bucket shifts above
   lags: [28, 35, 42, 49, 56]
   rolling_windows: [7, 28, 56]
   zero_rate_window: 28

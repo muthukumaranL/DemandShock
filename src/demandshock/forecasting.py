@@ -197,9 +197,19 @@ def train_lgbm(cfg: Config, frame: pd.DataFrame, fold: FoldSpec, config_name: st
     )
 
 
-def predict_window(model: TrainedModel, frame: pd.DataFrame, fold: FoldSpec) -> pd.DataFrame:
-    """Score every series over the fold's 28-day window in one vectorised call."""
-    window = frame[(frame["d"] >= fold.val_start_d) & (frame["d"] <= fold.val_end_d)]
+def predict_window(model: TrainedModel, frame: pd.DataFrame, fold: FoldSpec,
+                   min_step: int | None = None,
+                   max_step: int | None = None) -> pd.DataFrame:
+    """Score the fold's window in one vectorised call.
+
+    `min_step`/`max_step` restrict scoring to a horizon bucket: a model trained
+    with shift S may only serve steps up to S, because at step S its newest input
+    is exactly the forecast origin.
+    """
+    start = fold.val_start_d + (min_step - 1 if min_step else 0)
+    end = fold.val_start_d + (max_step - 1) if max_step else fold.val_end_d
+    window = frame[(frame["d"] >= max(start, fold.val_start_d))
+                   & (frame["d"] <= min(end, fold.val_end_d))]
     if window.empty:
         return pd.DataFrame(columns=["item_id", "store_id", "d", "step",
                                      "y_true", "y_pred"])
@@ -213,6 +223,46 @@ def predict_window(model: TrainedModel, frame: pd.DataFrame, fold: FoldSpec) -> 
         "y_true": window["sales"].to_numpy(dtype="float64"),
         "y_pred": np.clip(preds, 0, None),
     })
+
+
+def fit_predict_buckets(cfg: Config, fold: FoldSpec, config_name: str,
+                        load_frame, params_override: dict[str, Any] | None = None,
+                        num_boost_round: int | None = None,
+                        use_early_stopping: bool = True,
+                        logger=None) -> tuple[pd.DataFrame, list[TrainedModel]]:
+    """Train one model per horizon bucket and stitch the 28-day path back together.
+
+    Each bucket uses the freshest demand history its own last step allows: a model
+    serving steps 1-7 may read up to the forecast origin, so its features are
+    shifted 7 days rather than 28. `load_frame(shift)` supplies that bucket's
+    feature table.
+
+    Returns the concatenated predictions (one row per item-store-step, exactly as
+    a single-model run produced) plus the fitted models.
+    """
+    parts, models = [], []
+    for bucket in cfg.horizon_buckets:
+        shift = int(bucket["shift"])
+        frame = load_frame(shift)
+        model = train_lgbm(cfg, frame, fold, config_name,
+                           params_override=params_override,
+                           num_boost_round=num_boost_round,
+                           use_early_stopping=use_early_stopping, logger=logger)
+        preds = predict_window(model, frame, fold,
+                               min_step=int(bucket["min_step"]),
+                               max_step=int(bucket["max_step"]))
+        if not preds.empty:
+            parts.append(preds)
+        models.append(model)
+        if logger:
+            logger.info("      bucket %s (steps %s-%s, shift %s): %s rows scored",
+                        bucket["name"], bucket["min_step"], bucket["max_step"],
+                        shift, f"{len(preds):,}")
+        del frame
+    if not parts:
+        return pd.DataFrame(columns=["item_id", "store_id", "d", "step",
+                                     "y_true", "y_pred"]), models
+    return pd.concat(parts, ignore_index=True), models
 
 
 # ---------------------------------------------------------------------------

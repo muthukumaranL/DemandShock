@@ -355,22 +355,34 @@ def build_features(cfg: Config, logger=None) -> dict[str, Any]:
         values = calendar[col].fillna(_NO_EVENT).astype(str).unique().tolist()
         categories[col] = sorted(values)
 
-    for store_id in stores:
-        frame = build_store_features(cfg, store_id, calendar, series_meta,
-                                     prices, fema, fred, keep_from)
-        for col, cats in categories.items():
-            if col in frame.columns:
-                frame[col] = pd.Categorical(frame[col].astype(str), categories=cats)
-        part_dir = out_root / f"store_id={store_id}"
-        part_dir.mkdir(parents=True, exist_ok=True)
-        frame.drop(columns=["store_id"]).to_parquet(
-            part_dir / "part-0.parquet", index=False,
-            compression="zstd", compression_level=3)
-        stats["rows"] += len(frame)
+    # One table per distinct bucket shift. Demand features for a model serving
+    # steps 1..S may look back only to the origin, i.e. must be shifted by S; the
+    # calendar, price and external blocks are identical across shifts.
+    shifts = cfg.bucket_shifts
+    stats["shifts"] = shifts
+    default_shift = int(cfg["features"]["demand_shift"])
+
+    for shift in shifts:
+        cfg.raw["features"]["demand_shift"] = shift
+        shift_rows = 0
+        for store_id in stores:
+            frame = build_store_features(cfg, store_id, calendar, series_meta,
+                                         prices, fema, fred, keep_from)
+            for col, cats in categories.items():
+                if col in frame.columns:
+                    frame[col] = pd.Categorical(frame[col].astype(str), categories=cats)
+            part_dir = out_root / f"shift={shift}" / f"store_id={store_id}"
+            part_dir.mkdir(parents=True, exist_ok=True)
+            frame.drop(columns=["store_id"]).to_parquet(
+                part_dir / "part-0.parquet", index=False,
+                compression="zstd", compression_level=3)
+            shift_rows += len(frame)
+            del frame
+        stats["rows"] += shift_rows
         if logger:
-            logger.info("  features %s: %s rows x %s features",
-                        store_id, f"{len(frame):,}", stats["n_features"])
-        del frame
+            logger.info("  features shift=%s: %s rows x %s features across %s stores",
+                        shift, f"{shift_rows:,}", stats["n_features"], len(stores))
+    cfg.raw["features"]["demand_shift"] = default_shift
 
     (cfg.processed_dir / "feature_categories.json").write_text(
         json.dumps(categories, indent=2), encoding="utf-8")
@@ -382,8 +394,13 @@ def build_features(cfg: Config, logger=None) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 def load_features(cfg: Config, columns: list[str] | None = None,
                   d_min: int | None = None, d_max: int | None = None,
-                  stores: list[str] | None = None) -> pd.DataFrame:
-    """Load the feature matrix with column pruning and day-range filter pushdown."""
+                  stores: list[str] | None = None,
+                  shift: int | None = None) -> pd.DataFrame:
+    """Load the feature matrix with column pruning and day-range filter pushdown.
+
+    `shift` selects the horizon bucket's table; it defaults to the longest bucket
+    so callers written before bucketing keep their original behaviour.
+    """
     import pyarrow.dataset as ds
 
     root = cfg.processed_dir / "features"
@@ -391,6 +408,15 @@ def load_features(cfg: Config, columns: list[str] | None = None,
         raise FileNotFoundError(
             f"{root} not found - run: python scripts/prepare_data.py && "
             "python scripts/train.py")
+
+    layered = any(p.name.startswith("shift=") for p in root.iterdir() if p.is_dir())
+    if layered:
+        chosen = int(shift if shift is not None else cfg["features"]["demand_shift"])
+        root = root / f"shift={chosen}"
+        if not root.exists():
+            raise FileNotFoundError(
+                f"No feature table for shift={chosen}. Rebuild with "
+                "python scripts/prepare_data.py")
     dataset = ds.dataset(root, format="parquet", partitioning="hive")
 
     filt = None

@@ -63,6 +63,23 @@ def _write_forecasts(cfg, frame: pd.DataFrame, model: str, config_name: str,
                    compression="zstd", compression_level=3)
 
 
+def _bucket_loader(cfg, d_min: int | None, d_max: int | None):
+    """Return load_frame(shift) with a small cache.
+
+    Each fold reuses the same per-shift tables across ablation arms, so they are
+    read once rather than once per arm.
+    """
+    cache: dict[int, pd.DataFrame] = {}
+
+    def load(shift: int) -> pd.DataFrame:
+        if shift not in cache:
+            cache.clear()      # one table at a time: each is ~21M rows
+            cache[shift] = F.load_features(cfg, d_min=d_min, d_max=d_max, shift=shift)
+        return cache[shift]
+
+    return load
+
+
 def _attach_hierarchy(frame: pd.DataFrame, meta: pd.DataFrame) -> pd.DataFrame:
     cols = ["item_id", "store_id", "dept_id", "cat_id", "state_id"]
     return frame.merge(meta[cols], on=["item_id", "store_id"], how="left")
@@ -211,10 +228,11 @@ def main() -> int:
     for fold in FC.fold_specs(cfg, cfg.cv_folds):
         window = cfg.train_window_days
         d_min = (fold.train_end_d - window + 1) if window else None
-        frame = F.load_features(cfg, d_min=d_min, d_max=fold.val_end_d)
+        loader = _bucket_loader(cfg, d_min, fold.val_end_d)
         for config_name in ablation_configs:
-            model = FC.train_lgbm(cfg, frame, fold, config_name, logger=log)
-            preds = FC.predict_window(model, frame, fold)
+            preds, bucket_models = FC.fit_predict_buckets(
+                cfg, fold, config_name, loader, logger=log)
+            model = bucket_models[-1]
             _write_forecasts(cfg, preds, "lgbm", config_name, fold.name)
 
             block = _metric_rows(preds, scales_for(fold), meta, cfg,
@@ -240,7 +258,7 @@ def main() -> int:
             if config_name == cfg["ablation"]["shock_config"]:
                 shock_residuals.append(preds.assign(fold_id=fold.name))
             boosters[(config_name, fold.name)] = model
-        del frame
+        del loader
 
     ablation = pd.DataFrame(ablation_rows)
     if not ablation.empty:
@@ -282,10 +300,11 @@ def main() -> int:
     holdout = FC.fold_specs(cfg, ["HOLDOUT"])[0]
     window = cfg.train_window_days
     d_min = (holdout.train_end_d - window + 1) if window else None
-    frame = F.load_features(cfg, d_min=d_min, d_max=holdout.val_end_d)
+    holdout_loader = _bucket_loader(cfg, d_min, holdout.val_end_d)
 
-    holdout_model = FC.train_lgbm(cfg, frame, holdout, selected, logger=log)
-    holdout_preds = FC.predict_window(holdout_model, frame, holdout)
+    holdout_preds, holdout_models = FC.fit_predict_buckets(
+        cfg, holdout, selected, holdout_loader, logger=log)
+    holdout_model = holdout_models[-1]
     block = _metric_rows(holdout_preds, scales_for(holdout), meta, cfg,
                          "lgbm", selected, holdout.name)
     if not block.empty:
@@ -298,8 +317,9 @@ def main() -> int:
     else:
         log.info("    extra %s fit for shock residuals (not used for selection)",
                  shock_config)
-        shock_holdout_model = FC.train_lgbm(cfg, frame, holdout, shock_config, logger=log)
-        shock_holdout_preds = FC.predict_window(shock_holdout_model, frame, holdout)
+        shock_holdout_preds, shock_models = FC.fit_predict_buckets(
+            cfg, holdout, shock_config, holdout_loader, logger=log)
+        shock_holdout_model = shock_models[-1]
         blk = _metric_rows(shock_holdout_preds, scales_for(holdout), meta, cfg,
                            "lgbm", shock_config, holdout.name)
         if not blk.empty:
@@ -336,14 +356,14 @@ def main() -> int:
 
     # ----------------------------------------------------- deploy + forward
     log.info("[5/6] deploy fit through d_%s + forward forecast", cfg.fold("FORWARD")["train_end_d"])
-    del frame
     forward = FC.fold_specs(cfg, ["FORWARD"])[0]
     d_min = (forward.train_end_d - window + 1) if window else None
-    frame = F.load_features(cfg, d_min=d_min, d_max=forward.val_end_d)
-    deploy_model = FC.train_lgbm(
-        cfg, frame, forward, selected, use_early_stopping=False,
+    forward_loader = _bucket_loader(cfg, d_min, forward.val_end_d)
+    forward_preds, deploy_models = FC.fit_predict_buckets(
+        cfg, forward, selected, forward_loader, use_early_stopping=False,
         num_boost_round=holdout_model.best_iteration, logger=log)
-    forward_preds = FC.predict_window(deploy_model, frame, forward)
+    deploy_model = deploy_models[-1]
+    frame = forward_loader(int(cfg.horizon_buckets[-1]["shift"]))
     if not quantiles.empty:
         forward_preds = FC.apply_residual_quantiles(cfg, forward_preds, quantiles, meta)
     _write_forecasts(cfg, forward_preds, "lgbm", selected, "FORWARD")

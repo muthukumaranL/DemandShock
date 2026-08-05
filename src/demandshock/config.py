@@ -140,6 +140,30 @@ class Config:
         """Folds used for ablation / residual pooling (excludes HOLDOUT, FORWARD)."""
         return [f for f in self.folds if f not in ("HOLDOUT", "FORWARD")]
 
+    # ---- horizon buckets -------------------------------------------------
+    @property
+    def horizon_buckets(self) -> list[dict[str, Any]]:
+        """Step ranges served by their own model, each with its own origin shift.
+
+        Falls back to a single 28-step bucket so configs predating bucketing keep
+        working unchanged.
+        """
+        buckets = self.raw.get("horizon_buckets")
+        if not buckets:
+            return [{"name": "H1", "min_step": 1, "max_step": int(self.raw["horizon"]),
+                     "shift": int(self.raw["features"]["demand_shift"])}]
+        return [dict(b) for b in buckets]
+
+    @property
+    def bucket_shifts(self) -> list[int]:
+        return sorted({int(b["shift"]) for b in self.horizon_buckets})
+
+    def bucket_for_step(self, step: int) -> dict[str, Any]:
+        for bucket in self.horizon_buckets:
+            if int(bucket["min_step"]) <= step <= int(bucket["max_step"]):
+                return bucket
+        raise ConfigError(f"step {step} falls outside every horizon bucket")
+
     @property
     def train_window_days(self) -> int | None:
         value = self.mode_settings.get("train_window_days")

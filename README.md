@@ -106,18 +106,43 @@ See [`data/raw/README.md`](data/raw/README.md) for exact file layout and downloa
 
 ## Forecasting methodology
 
-**One global LightGBM, direct multi-horizon, Tweedie objective.**
+**Global LightGBM, direct multi-horizon, Tweedie objective, one model per horizon bucket.**
 
 The single invariant that everything else follows from:
 
 > Every feature for target date `t` is computable from information available at the
-> forecast origin `O = t − 28 days`, or is genuinely known in advance (retail
-> calendar, SNAP schedule, published weekly price).
+> forecast origin `O`, or is genuinely known in advance (retail calendar, SNAP
+> schedule, published weekly price).
 
-That means demand lags start at 28, rolling windows are applied to `y.shift(28)`, and
-FEMA/FRED tables are joined at `date − 28 days` — the state of the world as known at
-the origin. One vectorised predict call covers the whole 28-day path; horizons 7/14/28
-are prefixes of it.
+A 28-day path is issued once at origin `O`, so a model serving steps `1..S` may read
+data only up to `O` — a shift of `S` relative to the *target* date. **Horizon buckets**
+give each step range the freshest history it is entitled to:
+
+| Bucket | Steps | Shift | Newest input at its last step |
+| --- | --- | --- | --- |
+| H1 | 1–7 | 7 days | the origin |
+| H2 | 8–14 | 14 days | the origin |
+| H3 | 15–28 | 28 days | the origin |
+
+The safety rule is `shift ≥ max_step`, enforced by test. Demand lags and rolling
+windows are shifted by the bucket's own shift; FEMA/FRED are joined at the origin.
+
+**This replaced a single 28-day freeze for all steps**, which had the perverse effect
+that a 1-day-ahead forecast read 27-day-old demand while the 28-day-ahead forecast read
+the freshest. WAPE was consequently *flat* across the horizon — the opposite of what a
+forecaster should do. Measured on the full held-out window:
+
+| Steps | Single 28-day freeze | Horizon buckets |
+| --- | --- | --- |
+| 1–7 | 0.7519 | **0.7226** |
+| 8–14 | 0.7385 | **0.7233** |
+| 15–28 | 0.7274 | 0.7274 *(unchanged — 28 was already correct)* |
+| All 28 | 0.7305 | **0.7198** |
+
+The curve now slopes upward with horizon, as it should. Steps 15–28 being unchanged is
+the control: that bucket's shift did not move, so neither did its accuracy. Bucketing
+also makes the benchmark comparison fairer — the naive models always forecast from the
+origin, so the old design handicapped the model against them at short horizons.
 
 **Why direct rather than recursive.** With over half of item-days at zero, feeding
 fractional predictions back into integer-heavy lag features compounds distribution
@@ -125,9 +150,8 @@ shift across 28 steps and would contaminate the very residuals the shock module
 depends on. Direct forecasting also means training and inference share one feature
 function, so there is no second implementation to drift out of sync.
 
-**The honest cost**, stated in the app: a 7-day-ahead forecast sees demand only as of
-28 days earlier. That is why **seasonal-naive-28 is the primary benchmark** — it
-shares that information set exactly, making the comparison fair.
+**Seasonal-naive-28 remains the primary benchmark** for the full 28-day path, since it
+forecasts the whole path from the same origin.
 
 **Features (47 total, cumulative ablation arms):**
 
