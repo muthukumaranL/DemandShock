@@ -151,9 +151,31 @@ def style_fig(fig: go.Figure, height: int = 320, title: str | None = None) -> go
 # ---------------------------------------------------------------------------
 # config + artifacts
 # ---------------------------------------------------------------------------
+def resolve_config(primary_path: Path, deploy_path: Path):
+    """Pick the config whose artifacts actually exist, preferring the primary one.
+
+    A local run writes full-scale artifacts far too large to commit, so they are
+    gitignored and a hosted deployment starts from a clone with nothing built.
+    When the primary artifacts are absent but the committed development-mode
+    bundle is present, fall back to it, so the app works straight from a clone
+    instead of showing its "not built" panel forever.
+
+    Kept as a plain function of two paths so the deployment path is testable
+    without a built tree.
+    """
+    primary = load_config(primary_path)
+    if (primary.artifacts_dir / "model_metadata.json").exists():
+        return primary
+    if deploy_path.exists():
+        fallback = load_config(deploy_path)
+        if (fallback.artifacts_dir / "model_metadata.json").exists():
+            return fallback
+    return primary
+
+
 @st.cache_resource
 def get_config():
-    return load_config(REPO_ROOT / "config.yaml")
+    return resolve_config(REPO_ROOT / "config.yaml", REPO_ROOT / "config.deploy.yaml")
 
 
 ARTIFACT_FILES = {

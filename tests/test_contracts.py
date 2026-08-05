@@ -288,3 +288,72 @@ def test_forecast_loader_preserves_prediction_intervals(cfg, built):
     if not fold_one.empty:
         assert "p10" not in fold_one.columns, (
             "folds without intervals should drop the column, not carry it as nulls")
+
+
+# ---------------------------------------------------------------------------
+# deployment bundle
+# ---------------------------------------------------------------------------
+def test_deploy_config_exists_and_writes_outside_the_local_tree():
+    """The committed bundle must not collide with a local full-scale build."""
+    deploy = REPO_ROOT / "config.deploy.yaml"
+    if not deploy.exists():
+        pytest.skip("no deployment config in this checkout")
+    cfg = load_config(deploy)
+    assert cfg.mode == "development", "the committed bundle must be the small build"
+    for key in ("artifacts_dir", "processed_dir", "models_dir"):
+        assert "deploy" in str(cfg.path_of(key)).replace("\\", "/"), (
+            f"{key} must live under deploy/ so a local run cannot overwrite it")
+
+
+def test_app_falls_back_to_the_deploy_bundle_when_nothing_is_built(tmp_path):
+    """A fresh clone has no local artifacts; the app must still find data.
+
+    This is the deployment path: without the fallback the hosted app renders its
+    'artifacts not built' panel forever, which is exactly what a reviewer sees.
+    """
+    import sys as _sys
+    import yaml
+
+    _sys.path.insert(0, str(REPO_ROOT / "app"))
+    import shared
+
+    deploy = REPO_ROOT / "config.deploy.yaml"
+    if not deploy.exists() or not (load_config(deploy).artifacts_dir
+                                   / "model_metadata.json").exists():
+        pytest.skip("deployment bundle not built in this checkout")
+
+    # a config whose artifacts directory is empty, standing in for a fresh clone
+    raw = yaml.safe_load((REPO_ROOT / "config.yaml").read_text(encoding="utf-8"))
+    empty = tmp_path / "empty_artifacts"
+    empty.mkdir()
+    raw["paths"]["artifacts_dir"] = empty.as_posix()
+    unbuilt = tmp_path / "config.yaml"
+    unbuilt.write_text(yaml.safe_dump(raw), encoding="utf-8")
+
+    chosen = shared.resolve_config(unbuilt, deploy)
+    assert (chosen.artifacts_dir / "model_metadata.json").exists(), (
+        "fell through to a config with no artifacts - the hosted app would be blank")
+    assert chosen.mode == "development"
+
+    # and when the primary IS built it must win, so local work is never shadowed
+    primary = load_config(REPO_ROOT / "config.yaml")
+    if (primary.artifacts_dir / "model_metadata.json").exists():
+        assert shared.resolve_config(REPO_ROOT / "config.yaml",
+                                     deploy).artifacts_dir == primary.artifacts_dir
+
+
+def test_deploy_bundle_carries_every_artifact_the_app_reads():
+    deploy = REPO_ROOT / "config.deploy.yaml"
+    if not deploy.exists():
+        pytest.skip("no deployment config in this checkout")
+    cfg = load_config(deploy)
+    if not (cfg.artifacts_dir / "model_metadata.json").exists():
+        pytest.skip("deployment bundle not built in this checkout")
+    for name in ("metrics.parquet", "ablation.parquet", "shocks_daily.parquet",
+                 "shock_episodes.parquet", "inventory_base.parquet",
+                 "feature_importance.parquet", "residual_quantiles.parquet",
+                 "model_metadata.json", "data_quality.json", "forecasts.parquet"):
+        assert (cfg.artifacts_dir / name).exists(), f"bundle is missing {name}"
+    for name in ("calendar.parquet", "series_meta.parquet", "prices_long.parquet",
+                 "fema_context.parquet", "fred_state_daily.parquet", "sales_long"):
+        assert (cfg.processed_dir / name).exists(), f"bundle is missing {name}"

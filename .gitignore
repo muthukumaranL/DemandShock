@@ -1,10 +1,21 @@
-# Raw and derived data are NOT redistributed (M5 competition terms).
-datasets/
-data/processed/
-data/raw/*
-!data/raw/README.md
-artifacts/
-models/
+# Raw M5 data is not redistributed (competition terms), and a full-scale local
+# run writes hundreds of megabytes of derived tables. Anchored to the repository
+# root with a leading slash: an unanchored "artifacts/" also matches
+# deploy/artifacts/, which would silently exclude the committed bundle below.
+/datasets/
+/data/processed/
+/data/raw/*
+!/data/raw/README.md
+/artifacts/
+/models/
+
+# The deployment bundle is the deliberate exception: a small development-mode
+# build over 200 real M5 series, committed so the hosted app works straight from
+# a clone rather than showing its "artifacts not built" panel. Excluded from it
+# are the feature matrix (only the pipeline reads that, and it is by far the
+# largest part) and the run logs.
+/deploy/data/processed/features/
+/deploy/artifacts/logs/
 
 __pycache__/
 *.py[cod]

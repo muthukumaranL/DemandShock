@@ -1,0 +1,27 @@
+{
+  "F1": {
+    "train_end_d": 1829,
+    "val_start_d": 1830,
+    "val_end_d": 1857
+  },
+  "F2": {
+    "train_end_d": 1857,
+    "val_start_d": 1858,
+    "val_end_d": 1885
+  },
+  "F3": {
+    "train_end_d": 1885,
+    "val_start_d": 1886,
+    "val_end_d": 1913
+  },
+  "HOLDOUT": {
+    "train_end_d": 1913,
+    "val_start_d": 1914,
+    "val_end_d": 1941
+  },
+  "FORWARD": {
+    "train_end_d": 1941,
+    "val_start_d": 1942,
+    "val_end_d": 1969
+  }
+}

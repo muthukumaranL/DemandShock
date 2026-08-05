@@ -35,8 +35,10 @@ def _fmt(value, digits=4):
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", choices=["development", "full"], default=None)
+    parser.add_argument("--config", default=None,
+                        help="alternate config file, e.g. config.deploy.yaml")
     args = parser.parse_args()
-    cfg = load_config(mode=args.mode)
+    cfg = load_config(args.config, mode=args.mode)
     log = get_logger("export_results", cfg, "export_results.log")
 
     metadata_path = cfg.artifacts_dir / "model_metadata.json"

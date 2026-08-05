@@ -1,19 +1,29 @@
-# DemandShock — pinned to the versions verified in this environment (Python 3.14.4).
-pandas==3.0.2
-numpy==2.4.4
-pyarrow==23.0.1
-scipy==1.17.1
-scikit-learn==1.8.0
-lightgbm==4.6.0
-plotly==6.8.0
-streamlit==1.58.0
-fastapi==0.139.0
-uvicorn==0.49.0
-joblib==1.5.3
-PyYAML>=6.0
-pytest==9.0.3
-httpx>=0.27          # required by fastapi.testclient
+# Runtime dependencies for the Streamlit application and the pipeline.
+#
+# Ranges rather than exact pins: this was developed on Python 3.14, but hosted
+# platforms commonly run 3.11-3.13, and hard pins to 3.14-era wheels fail to
+# resolve there. Lower bounds mark the earliest release carrying an API this
+# project relies on - notably pandas 2.2 for groupby.apply(include_groups=...).
+#
+# The exact versions the published results were produced with are recorded in
+# artifacts/model_metadata.json under "library_versions", so a run is always
+# reproducible even though this file admits a range.
+#
+# Development-only tools (pytest, httpx) live in requirements-dev.txt so a
+# deployment does not install them.
 
-# Optional. LightGBM's native pred_contrib already provides exact TreeSHAP values,
-# so the platform never depends on this package being installed.
-# shap>=0.46
+pandas>=2.2,<4
+numpy>=1.26,<3
+pyarrow>=15,<24
+scipy>=1.11,<2
+scikit-learn>=1.4,<2
+lightgbm>=4.3,<5
+plotly>=5.20,<7
+streamlit>=1.40,<2
+PyYAML>=6.0
+joblib>=1.3
+
+# Served by api/main.py; harmless in an app-only deployment but kept together so
+# one install covers both entry points.
+fastapi>=0.110,<1
+uvicorn>=0.27,<1

@@ -1,0 +1,588 @@
+{
+  "generated_at": "2026-08-05T18:45:39+00:00",
+  "mode": "development",
+  "config_hash": "e7086b4468a5",
+  "n_checks": 63,
+  "n_pass": 63,
+  "n_warn": 0,
+  "n_fail": 0,
+  "checks": [
+    {
+      "name": "data.excluded_sources",
+      "status": "pass",
+      "expected": "informational",
+      "observed": [
+        "4365920.csv",
+        "4365923.csv",
+        "4365923.xlsx",
+        "CAUR.xlsx",
+        "TXUR.xlsx",
+        "WIUR.xlsx",
+        "sample_submission.csv"
+      ],
+      "detail": "NOAA weather is deliberately out of scope in this version; no feature, model, page or endpoint reads these files"
+    },
+    {
+      "name": "calendar.columns",
+      "status": "pass",
+      "expected": [
+        "date",
+        "wm_yr_wk",
+        "weekday",
+        "wday",
+        "month",
+        "year",
+        "d",
+        "event_name_1",
+        "event_type_1",
+        "event_name_2",
+        "event_type_2",
+        "snap_CA",
+        "snap_TX",
+        "snap_WI"
+      ],
+      "observed": [
+        "date",
+        "wm_yr_wk",
+        "weekday",
+        "wday",
+        "month",
+        "year",
+        "d",
+        "event_name_1",
+        "event_type_1",
+        "event_name_2",
+        "event_type_2",
+        "snap_CA",
+        "snap_TX",
+        "snap_WI"
+      ],
+      "detail": "exact M5 calendar schema"
+    },
+    {
+      "name": "calendar.date_continuity_gaps",
+      "status": "pass",
+      "expected": 0,
+      "observed": 0,
+      "detail": "every calendar row is exactly one day after the previous"
+    },
+    {
+      "name": "calendar.d_continuous",
+      "status": "pass",
+      "expected": true,
+      "observed": true,
+      "detail": "d runs 1..N with no gaps"
+    },
+    {
+      "name": "calendar.d_unique",
+      "status": "pass",
+      "expected": 0,
+      "observed": 0,
+      "detail": ""
+    },
+    {
+      "name": "calendar.wm_yr_wk_monotonic",
+      "status": "pass",
+      "expected": true,
+      "observed": true,
+      "detail": ""
+    },
+    {
+      "name": "calendar.rows",
+      "status": "pass",
+      "expected": "informational",
+      "observed": 1969,
+      "detail": ""
+    },
+    {
+      "name": "calendar.date_range",
+      "status": "pass",
+      "expected": "informational",
+      "observed": "2011-01-29 .. 2016-06-19",
+      "detail": ""
+    },
+    {
+      "name": "calendar.event_days_1",
+      "status": "pass",
+      "expected": "informational",
+      "observed": 162,
+      "detail": ""
+    },
+    {
+      "name": "calendar.event_days_2",
+      "status": "pass",
+      "expected": "informational",
+      "observed": 5,
+      "detail": ""
+    },
+    {
+      "name": "calendar.snap_days",
+      "status": "pass",
+      "expected": "informational",
+      "observed": {
+        "CA": 650,
+        "TX": 650,
+        "WI": 650
+      },
+      "detail": ""
+    },
+    {
+      "name": "sales.series_count",
+      "status": "pass",
+      "expected": 30490,
+      "observed": 30490,
+      "detail": ""
+    },
+    {
+      "name": "sales.id_unique",
+      "status": "pass",
+      "expected": 0,
+      "observed": 0,
+      "detail": ""
+    },
+    {
+      "name": "sales.item_count",
+      "status": "pass",
+      "expected": 3049,
+      "observed": 3049,
+      "detail": ""
+    },
+    {
+      "name": "sales.store_count",
+      "status": "pass",
+      "expected": 10,
+      "observed": 10,
+      "detail": ""
+    },
+    {
+      "name": "sales.dept_count",
+      "status": "pass",
+      "expected": 7,
+      "observed": 7,
+      "detail": ""
+    },
+    {
+      "name": "sales.cat_count",
+      "status": "pass",
+      "expected": 3,
+      "observed": 3,
+      "detail": ""
+    },
+    {
+      "name": "sales.state_count",
+      "status": "pass",
+      "expected": 3,
+      "observed": 3,
+      "detail": ""
+    },
+    {
+      "name": "hierarchy.item_to_dept_unique",
+      "status": "pass",
+      "expected": 1,
+      "observed": 1,
+      "detail": ""
+    },
+    {
+      "name": "hierarchy.item_to_cat_unique",
+      "status": "pass",
+      "expected": 1,
+      "observed": 1,
+      "detail": ""
+    },
+    {
+      "name": "hierarchy.store_to_state_unique",
+      "status": "pass",
+      "expected": 1,
+      "observed": 1,
+      "detail": ""
+    },
+    {
+      "name": "hierarchy.id_composition",
+      "status": "pass",
+      "expected": 0,
+      "observed": 0,
+      "detail": "id == item_id + '_' + store_id + suffix"
+    },
+    {
+      "name": "sales.validation_vs_evaluation_agree",
+      "status": "pass",
+      "expected": true,
+      "observed": true,
+      "detail": "first 500 series, d_1..d_1913 identical across both M5 files"
+    },
+    {
+      "name": "prices.columns",
+      "status": "pass",
+      "expected": [
+        "store_id",
+        "item_id",
+        "wm_yr_wk",
+        "sell_price"
+      ],
+      "observed": [
+        "store_id",
+        "item_id",
+        "wm_yr_wk",
+        "sell_price"
+      ],
+      "detail": ""
+    },
+    {
+      "name": "prices.rows_raw",
+      "status": "pass",
+      "expected": 6841121,
+      "observed": 6841121,
+      "detail": ""
+    },
+    {
+      "name": "prices.duplicate_keys",
+      "status": "pass",
+      "expected": 0,
+      "observed": 0,
+      "detail": ""
+    },
+    {
+      "name": "prices.non_positive",
+      "status": "pass",
+      "expected": 0,
+      "observed": 0,
+      "detail": ""
+    },
+    {
+      "name": "prices.nulls",
+      "status": "pass",
+      "expected": 0,
+      "observed": 0,
+      "detail": ""
+    },
+    {
+      "name": "prices.weeks_within_calendar",
+      "status": "pass",
+      "expected": 0,
+      "observed": 0,
+      "detail": ""
+    },
+    {
+      "name": "series.every_series_has_price",
+      "status": "pass",
+      "expected": 0,
+      "observed": 0,
+      "detail": "each selected series must appear in sell_prices.csv"
+    },
+    {
+      "name": "series.selected",
+      "status": "pass",
+      "expected": "informational",
+      "observed": 200,
+      "detail": ""
+    },
+    {
+      "name": "series.release_d_range",
+      "status": "pass",
+      "expected": "informational",
+      "observed": "1 .. 1450",
+      "detail": ""
+    },
+    {
+      "name": "sales.day_columns",
+      "status": "pass",
+      "expected": 1941,
+      "observed": 1941,
+      "detail": ""
+    },
+    {
+      "name": "sales.negative_values",
+      "status": "pass",
+      "expected": 0,
+      "observed": 0,
+      "detail": ""
+    },
+    {
+      "name": "sales.int16_safe",
+      "status": "pass",
+      "expected": "< 32767",
+      "observed": 77,
+      "detail": ""
+    },
+    {
+      "name": "sales.rows_melted",
+      "status": "pass",
+      "expected": "informational",
+      "observed": 388200,
+      "detail": ""
+    },
+    {
+      "name": "sales.rows_after_release_filter",
+      "status": "pass",
+      "expected": "informational",
+      "observed": 329624,
+      "detail": ""
+    },
+    {
+      "name": "sales.rows_dropped_pre_release",
+      "status": "pass",
+      "expected": "informational",
+      "observed": "58,576 (15.1%)",
+      "detail": "days before the item was first priced in that store - these are not zero-demand days, the item did not exist yet"
+    },
+    {
+      "name": "labels.every_series_described",
+      "status": "pass",
+      "expected": 0,
+      "observed": 0,
+      "detail": ""
+    },
+    {
+      "name": "labels.velocity_mix",
+      "status": "pass",
+      "expected": "informational",
+      "observed": {
+        "Steady": 60,
+        "Slow mover": 50,
+        "Fast mover": 40,
+        "Very slow": 29,
+        "Top seller": 21
+      },
+      "detail": "descriptors measured from each series' own sales history; ranked within its category"
+    },
+    {
+      "name": "labels.price_band_mix",
+      "status": "pass",
+      "expected": "informational",
+      "observed": {
+        "Value": 85,
+        "Mid-price": 77,
+        "Premium": 38
+      },
+      "detail": ""
+    },
+    {
+      "name": "labels.distinct_descriptions",
+      "status": "pass",
+      "expected": "informational",
+      "observed": 15,
+      "detail": "M5 contains no product names; these descriptors are derived from real measured attributes instead of invented"
+    },
+    {
+      "name": "fema.required_columns_present",
+      "status": "pass",
+      "expected": [],
+      "observed": [],
+      "detail": ""
+    },
+    {
+      "name": "fema.rows_raw",
+      "status": "pass",
+      "expected": "informational",
+      "observed": 70098,
+      "detail": ""
+    },
+    {
+      "name": "fema.unique_disasters_in_m5_window",
+      "status": "pass",
+      "expected": 115,
+      "observed": 115,
+      "detail": "CA/TX/WI declarations overlapping 2011-01-29 .. 2016-06-19"
+    },
+    {
+      "name": "fema.unique_disasters_incl_origin_lookback",
+      "status": "pass",
+      "expected": "informational",
+      "observed": 116,
+      "detail": "includes declarations active in the 28-day forecast-origin lookback before the M5 window starts"
+    },
+    {
+      "name": "fema.end_after_begin",
+      "status": "pass",
+      "expected": 0,
+      "observed": 0,
+      "detail": ""
+    },
+    {
+      "name": "fema.null_end_dates_raw_rows",
+      "status": "pass",
+      "expected": "informational",
+      "observed": 11,
+      "detail": "imputed as incidentBeginDate + 33 days (in-window median)"
+    },
+    {
+      "name": "fema.disasters_by_state_type",
+      "status": "pass",
+      "expected": "informational",
+      "observed": {
+        "('CA', 'DR')": 7,
+        "('CA', 'FM')": 37,
+        "('TX', 'DR')": 10,
+        "('TX', 'EM')": 1,
+        "('TX', 'FM')": 58,
+        "('WI', 'DR')": 3
+      },
+      "detail": ""
+    },
+    {
+      "name": "fema.disasters_by_incident_type",
+      "status": "pass",
+      "expected": "informational",
+      "observed": {
+        "('CA', 'Earthquake')": 1,
+        "('CA', 'Fire')": 40,
+        "('CA', 'Flood')": 2,
+        "('CA', 'Tsunami')": 1,
+        "('TX', 'Fire')": 60,
+        "('TX', 'Flood')": 3,
+        "('TX', 'Other')": 2,
+        "('TX', 'Severe Storm')": 4,
+        "('WI', 'Severe Storm')": 2,
+        "('WI', 'Snowstorm')": 1
+      },
+      "detail": ""
+    },
+    {
+      "name": "fema.flag_on_rate_by_state",
+      "status": "pass",
+      "expected": "informational",
+      "observed": {
+        "CA": {
+          "any_active": 0.145,
+          "dr_active": 0.022,
+          "fire_active": 0.143,
+          "flood_active": 0.001,
+          "storm_active": 0.0
+        },
+        "TX": {
+          "any_active": 0.212,
+          "dr_active": 0.116,
+          "fire_active": 0.183,
+          "flood_active": 0.013,
+          "storm_active": 0.014
+        },
+        "WI": {
+          "any_active": 0.002,
+          "dr_active": 0.002,
+          "fire_active": 0.0,
+          "flood_active": 0.0,
+          "storm_active": 0.001
+        }
+      },
+      "detail": "share of M5 days each flag is on. High rates mean low discriminative power - reported, not hidden."
+    },
+    {
+      "name": "fema.model_feature_rows",
+      "status": "pass",
+      "expected": 5991,
+      "observed": 5991,
+      "detail": ""
+    },
+    {
+      "name": "fred.no_missing_in_window",
+      "status": "pass",
+      "expected": 0,
+      "observed": 0,
+      "detail": "every M5-window day has a published unemployment rate"
+    },
+    {
+      "name": "fred.states",
+      "status": "pass",
+      "expected": "informational",
+      "observed": [
+        "CA",
+        "TX",
+        "WI"
+      ],
+      "detail": ""
+    },
+    {
+      "name": "fred.month_range",
+      "status": "pass",
+      "expected": "informational",
+      "observed": "1976-01-01 .. 2026-06-01",
+      "detail": ""
+    },
+    {
+      "name": "fred.publication_lag",
+      "status": "pass",
+      "expected": "informational",
+      "observed": "observation month + 1 month + 19 days",
+      "detail": "models the real BLS state release schedule"
+    },
+    {
+      "name": "fred.ur_range_in_m5_window",
+      "status": "pass",
+      "expected": "informational",
+      "observed": {
+        "CA": [
+          5.5,
+          12.2
+        ],
+        "TX": [
+          4.4,
+          8.4
+        ],
+        "WI": [
+          4.0,
+          7.9
+        ]
+      },
+      "detail": ""
+    },
+    {
+      "name": "features.rows",
+      "status": "pass",
+      "expected": "informational",
+      "observed": 955272,
+      "detail": ""
+    },
+    {
+      "name": "features.count",
+      "status": "pass",
+      "expected": "informational",
+      "observed": 47,
+      "detail": "47 canonical features; ablation arms A/B/C/D are cumulative subsets"
+    },
+    {
+      "name": "features.first_day_retained",
+      "status": "pass",
+      "expected": "informational",
+      "observed": 1,
+      "detail": "earliest day needed by the configured folds and training window"
+    },
+    {
+      "name": "features.warmup_days_dropped",
+      "status": "pass",
+      "expected": "informational",
+      "observed": 84,
+      "detail": "28-day shift + 56-day longest rolling window; never imputed"
+    },
+    {
+      "name": "sales.zero_demand_ratio",
+      "status": "pass",
+      "expected": "informational",
+      "observed": 0.525,
+      "detail": "share of post-release days with zero units sold (intermittent demand)"
+    },
+    {
+      "name": "sales.mean_units_per_day",
+      "status": "pass",
+      "expected": "informational",
+      "observed": 1.577,
+      "detail": ""
+    }
+  ],
+  "tables": {
+    "mode": "development",
+    "series": 200,
+    "items": 200,
+    "stores": 1,
+    "departments": 1,
+    "categories": 1,
+    "states": 1,
+    "calendar_days": 1969,
+    "date_start": "2011-01-29",
+    "date_end": "2016-06-19",
+    "sales_rows": 329624,
+    "price_rows": 48032,
+    "fema_disasters": 116,
+    "fred_months": 1818,
+    "zero_demand_ratio": 0.525
+  }
+}

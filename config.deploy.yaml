@@ -1,0 +1,231 @@
+# Deployment configuration.
+#
+# Identical to config.yaml except that it runs in development mode and writes to
+# deploy/, so a small committed bundle can be built without disturbing the
+# full-scale artifacts a local run produces. The app falls back to this config
+# automatically when no locally-built artifacts are present, which is what makes
+# the hosted deployment work straight from a clone.
+
+project:
+  name: DemandShock
+  version: 1.0.0
+  seed: 42
+mode: development
+paths:
+  m5_dir: datasets/m5-forecasting-accuracy
+  external_dir: datasets
+  processed_dir: deploy/data/processed
+  artifacts_dir: deploy/artifacts
+  models_dir: deploy/models
+  logs_dir: deploy/artifacts/logs
+files:
+  calendar: calendar.csv
+  sales: sales_train_evaluation.csv
+  sales_crosscheck: sales_train_validation.csv
+  prices: sell_prices.csv
+  fema: DisasterDeclarationsSummaries.csv
+  fred:
+    CA: CAUR.csv
+    TX: TXUR.csv
+    WI: WIUR.csv
+unused_files:
+- 4365920.csv
+- 4365923.csv
+- 4365923.xlsx
+- CAUR.xlsx
+- TXUR.xlsx
+- WIUR.xlsx
+- sample_submission.csv
+development:
+  stores:
+  - CA_1
+  categories:
+  - FOODS
+  max_real_items: 200
+  item_selection: first_n_sorted
+  train_window_days: null
+full:
+  stores: null
+  categories: null
+  max_real_items: null
+  train_window_days: 730
+horizon: 28
+horizons:
+- 7
+- 14
+- 28
+folds:
+  F1:
+    train_end_d: 1829
+    val_start_d: 1830
+    val_end_d: 1857
+  F2:
+    train_end_d: 1857
+    val_start_d: 1858
+    val_end_d: 1885
+  F3:
+    train_end_d: 1885
+    val_start_d: 1886
+    val_end_d: 1913
+  HOLDOUT:
+    train_end_d: 1913
+    val_start_d: 1914
+    val_end_d: 1941
+  FORWARD:
+    train_end_d: 1941
+    val_start_d: 1942
+    val_end_d: 1969
+horizon_buckets:
+- name: H1
+  min_step: 1
+  max_step: 7
+  shift: 7
+- name: H2
+  min_step: 8
+  max_step: 14
+  shift: 14
+- name: H3
+  min_step: 15
+  max_step: 28
+  shift: 28
+features:
+  demand_shift: 28
+  lags:
+  - 28
+  - 35
+  - 42
+  - 49
+  - 56
+  rolling_windows:
+  - 7
+  - 28
+  - 56
+  zero_rate_window: 28
+  days_since_last_sale_cap: 365
+  days_since_release_cap: 730
+  warmup_days: 84
+  price_rel_weeks: 52
+  price_momentum_weeks: 4
+fema:
+  states:
+  - CA
+  - TX
+  - WI
+  end_impute_days: 33
+  days_since_declaration_cap: 90
+  context_lead_days: 7
+fred:
+  availability_lag_months: 1
+  availability_lag_days: 19
+lgbm:
+  objective: tweedie
+  tweedie_variance_power: 1.1
+  learning_rate: 0.05
+  num_leaves: 128
+  min_data_in_leaf: 200
+  feature_fraction: 0.8
+  bagging_fraction: 0.8
+  bagging_freq: 1
+  lambda_l2: 0.1
+  max_bin: 127
+  num_threads: 12
+  metric: rmse
+  num_boost_round: 2000
+  early_stopping_rounds: 100
+  early_stopping_days: 28
+  verbose: -1
+  dev_overrides:
+    num_leaves: 64
+    min_data_in_leaf: 50
+ablation:
+  configs:
+  - A
+  - B
+  - C
+  - D
+  selection_metric: wape
+  selection_horizon: 28
+  selection_tolerance_rel: 0.003
+  shock_config: B
+uncertainty:
+  quantiles:
+  - 0.1
+  - 0.5
+  - 0.9
+  prediction_buckets:
+  - 0.0
+  - 0.5
+  - 1.5
+  - 3.0
+  - 6.0
+  - 12.0
+  min_group_residuals: 300
+shock:
+  weights:
+    std_residual: 35
+    pct_deviation: 20
+    persistence: 20
+    volatility_ratio: 10
+    level_shift: 15
+  squash:
+    z_saturate: 4.0
+    pct_saturate: 2.0
+    persistence_saturate: 7
+    volatility_saturate: 3.0
+    level_saturate: 3.0
+  sigma_floor_abs: 0.75
+  sigma_floor_rel: 0.15
+  pct_deviation_floor: 2.0
+  guard_volume_ref: 2.0
+  guard_min_multiplier: 0.25
+  warmup_days: 7
+  warmup_score_cap: 49
+  bands:
+    Normal:
+    - 0
+    - 30
+    Watch:
+    - 30
+    - 50
+    Elevated:
+    - 50
+    - 70
+    Severe:
+    - 70
+    - 85
+    Critical:
+    - 85
+    - 100.01
+  episode:
+    seed_score: 30
+    bridge_days: 1
+    close_days: 2
+    min_days: 2
+    single_day_score: 70
+  eligibility:
+    min_nonzero_days_trailing_56: 10
+    min_residual_days: 60
+  classification:
+    persistence_run: 7
+    persistent_max_z: 3.0
+    surge_sign_share: 0.7
+    surge_min_z: 2.0
+    regime_persist_ratio: 1.5
+    regime_relative_change: 0.7
+    regime_lookahead_days: 14
+    regime_min_days: 21
+inventory:
+  max_lead_time_days: 28
+  service_levels:
+  - 0.8
+  - 0.85
+  - 0.9
+  - 0.95
+  - 0.975
+  - 0.99
+  - 0.995
+  min_priced_days: 28
+explainability:
+  contrib_sample_series_full: 2000
+  contrib_sample_days: 28
+  top_features: 20
